@@ -15,6 +15,11 @@ import {
 } from './chatClient';
 import { ConversationFold } from './ConversationFold';
 import {
+  deleteFoldedTimeline,
+  restoreFoldedTimeline,
+  type TimelineRestoreMode,
+} from './conversationTimeline';
+import {
   DiagramCard,
   parseDiagramContent,
   type DiagramData,
@@ -1086,6 +1091,15 @@ export function App() {
     });
     requestAnimationFrame(() => composerRef.current?.focus());
   };
+  const restoreTimeline = (foldId: string, mode: TimelineRestoreMode) => {
+    if (sending) return;
+    setMessages((current) => restoreFoldedTimeline(current, foldId, mode));
+    autoScrollRef.current = true;
+  };
+  const deleteTimeline = (foldId: string) => {
+    if (sending) return;
+    setMessages((current) => deleteFoldedTimeline(current, foldId));
+  };
 
   const exportActiveProject = () => {
     if (!activeProject) return;
@@ -1772,6 +1786,10 @@ export function App() {
                       key={message.id}
                       messages={message.sessionEvent.messages}
                       foldedAt={message.sessionEvent.foldedAt}
+                      hasNewerMessages={messageIndex < messages.length - 1}
+                      disabled={sending}
+                      onRestore={(mode) => restoreTimeline(message.id, mode)}
+                      onDelete={() => deleteTimeline(message.id)}
                     />
                   );
                 }

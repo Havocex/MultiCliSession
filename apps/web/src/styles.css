@@ -1483,6 +1483,19 @@ input[type="radio"]:not(:disabled),
 }
 .folded-message.user { background: rgba(255,255,255,.027); }
 .folded-message.system { border-style: dashed; background: transparent; }
+.fold-actions { display:flex; align-items:center; justify-content:flex-end; gap:6px; padding:8px 11px; border-top:1px solid rgba(255,255,255,.05); }
+.fold-actions button { min-height:28px; padding:0 9px; border:1px solid rgba(255,255,255,.08); border-radius:7px; color:#8f889b; background:rgba(255,255,255,.025); font-size:8px; }
+.fold-actions .fold-restore { color:var(--accent); border-color:rgba(var(--accent-rgb),.17); background:rgba(var(--accent-rgb),.055); }
+.fold-actions .fold-delete { color:#a97378; }
+.fold-actions button:disabled { opacity:.35; }
+.fold-restore-choice { display:grid; gap:7px; padding:13px; border-top:1px solid rgba(var(--accent-rgb),.14); background:rgba(7,6,10,.55); }
+.fold-restore-choice>strong { color:#ddd6e7; font-size:11px; }
+.fold-restore-choice>p { margin:0 0 3px; color:#777080; font-size:9px; }
+.fold-restore-choice>button { display:grid; gap:3px; padding:10px; border:1px solid rgba(255,255,255,.07); border-radius:9px; color:#aaa3b5; text-align:left; background:rgba(255,255,255,.025); }
+.fold-restore-choice>button:hover { border-color:rgba(var(--accent-rgb),.25); background:rgba(var(--accent-rgb),.06); }
+.fold-restore-choice b { color:#d9d3e2; font-size:9px; }
+.fold-restore-choice span { color:#706978; font-size:8px; line-height:1.4; }
+.fold-restore-choice .fold-choice-cancel { justify-self:end; padding:5px 9px; color:#777080; background:transparent; }
 .session-event {
   display: grid;
   grid-template-columns: minmax(18px,1fr) auto minmax(18px,1fr);

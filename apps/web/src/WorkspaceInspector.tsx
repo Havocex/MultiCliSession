@@ -99,6 +99,7 @@ export function WorkspaceInspector({
   onToggleCollapsed,
   onResize,
   onUndo,
+  onRedo,
 }: {
   messages: Message[];
   open: boolean;
@@ -111,6 +112,7 @@ export function WorkspaceInspector({
   onToggleCollapsed: () => void;
   onResize: (width: number) => void;
   onUndo: (messageId: string, review: NonNullable<ReturnType<typeof parseReviewContent>['review']>) => void;
+  onRedo: (messageId: string, review: NonNullable<ReturnType<typeof parseReviewContent>['review']>) => void;
 }) {
   const [tab, setTab] = useState<'artifacts' | 'changes'>('artifacts');
   const [selectedId, setSelectedId] = useState<string>();
@@ -348,6 +350,7 @@ export function WorkspaceInspector({
                 action={message.reviewAction}
                 disabled={sending}
                 onUndo={() => onUndo(message.id, review)}
+                onRedo={() => onRedo(message.id, review)}
                 onFileSelect={setSelectedDiff}
               />
             ))}

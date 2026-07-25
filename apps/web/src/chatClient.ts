@@ -35,6 +35,10 @@ export interface ReviewAction {
   undoRequestedAt?: string;
   undoCompletedAt?: string;
   undoError?: string;
+  redoSnapshotId?: string;
+  redoRequestedAt?: string;
+  redoCompletedAt?: string;
+  redoError?: string;
 }
 export interface MessageReasoning {
   content: string;
@@ -110,8 +114,26 @@ export async function fetchOptions(forceRefresh = false): Promise<Options> {
 export async function undoWorkspaceFiles(
   snapshotId: string,
   files: string[],
-): Promise<{ restored: string[]; removed: string[]; skipped: string[] }> {
+): Promise<{ restored: string[]; removed: string[]; skipped: string[]; redoSnapshotId: string }> {
   const response = await apiFetch('/api/chat/workspace-undo', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ snapshotId, files }),
+  });
+  if (!response.ok) throw new Error(await response.text());
+  return response.json() as Promise<{
+    restored: string[];
+    removed: string[];
+    skipped: string[];
+    redoSnapshotId: string;
+  }>;
+}
+
+export async function redoWorkspaceFiles(
+  snapshotId: string,
+  files: string[],
+): Promise<{ restored: string[]; removed: string[]; skipped: string[] }> {
+  const response = await apiFetch('/api/chat/workspace-redo', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ snapshotId, files }),

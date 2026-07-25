@@ -156,6 +156,15 @@ export async function createWorkspaceSnapshot(workspace: string): Promise<string
   return id;
 }
 
+export async function createWorkspaceRedoSnapshot(snapshotId: string): Promise<string> {
+  const manifest = await readManifest(snapshotId);
+  const redoSnapshotId = await createWorkspaceSnapshot(manifest.workspace);
+  if (!redoSnapshotId) {
+    throw new Error('Could not capture the current workspace before undo.');
+  }
+  return redoSnapshotId;
+}
+
 export async function restoreWorkspaceFiles(
   snapshotId: string,
   requestedFiles: string[],

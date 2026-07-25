@@ -11,6 +11,7 @@ import { getProviderPermission, listProviderPermissions } from './provider-permi
 import { configuredWorkspace } from './provider-permissions.js';
 import { getProviderStatus } from './provider-sessions.js';
 import {
+  createWorkspaceRedoSnapshot,
   createWorkspaceSnapshot,
   restoreWorkspaceFiles,
 } from './workspace-snapshots.js';
@@ -172,10 +173,32 @@ chatRouter.post('/workspace-undo', async (req, res) => {
     return;
   }
   try {
-    res.json(await restoreWorkspaceFiles(snapshotId, files));
+    const redoSnapshotId = await createWorkspaceRedoSnapshot(snapshotId);
+    res.json({
+      ...await restoreWorkspaceFiles(snapshotId, files),
+      redoSnapshotId,
+    });
   } catch (error) {
     res.status(400).json({
       error: error instanceof Error ? error.message : 'Could not restore workspace files.',
+    });
+  }
+});
+
+chatRouter.post('/workspace-redo', async (req, res) => {
+  const snapshotId = typeof req.body?.snapshotId === 'string' ? req.body.snapshotId : '';
+  const files = Array.isArray(req.body?.files)
+    ? req.body.files.filter((value: unknown): value is string => typeof value === 'string')
+    : [];
+  if (!snapshotId || !files.length) {
+    res.status(400).json({ error: 'A redo snapshot and at least one file are required.' });
+    return;
+  }
+  try {
+    res.json(await restoreWorkspaceFiles(snapshotId, files));
+  } catch (error) {
+    res.status(400).json({
+      error: error instanceof Error ? error.message : 'Could not reapply workspace files.',
     });
   }
 });

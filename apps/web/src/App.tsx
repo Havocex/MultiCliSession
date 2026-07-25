@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import {
   fetchOptions,
+  redoWorkspaceFiles,
   selectWorkingDirectory,
   streamChat,
   undoWorkspaceFiles,
@@ -1027,6 +1028,10 @@ export function App() {
               ...message.reviewAction,
               undoRequestedAt,
               undoError: undefined,
+              redoSnapshotId: undefined,
+              redoRequestedAt: undefined,
+              redoCompletedAt: undefined,
+              redoError: undefined,
             },
           }
         : message,
@@ -1044,6 +1049,7 @@ export function App() {
                 ...message,
                 reviewAction: {
                   ...message.reviewAction,
+                  redoSnapshotId: result.redoSnapshotId,
                   undoCompletedAt: new Date().toISOString(),
                   undoError: result.skipped.length
                     ? `Could not restore: ${result.skipped.join(', ')}`
@@ -1062,6 +1068,69 @@ export function App() {
                 reviewAction: {
                   ...message.reviewAction,
                   undoError: error instanceof Error ? error.message : String(error),
+                },
+              }
+            : message,
+        ),
+      );
+    }
+  };
+
+  const requestRedoChanges = async (
+    messageId: string,
+    review: ReviewChangesData,
+  ) => {
+    if (sending) return;
+    const target = messages.find((message) => message.id === messageId);
+    const redoSnapshotId = target?.reviewAction?.redoSnapshotId;
+    if (!redoSnapshotId || !target?.reviewAction?.undoCompletedAt) return;
+    setMessages((current) =>
+      current.map((message) =>
+        message.id === messageId
+          ? {
+              ...message,
+              reviewAction: {
+                ...message.reviewAction,
+                redoRequestedAt: new Date().toISOString(),
+                redoError: undefined,
+              },
+            }
+          : message,
+      ),
+    );
+    try {
+      const result = await redoWorkspaceFiles(
+        redoSnapshotId,
+        review.files.map((file) => file.path),
+      );
+      setMessages((current) =>
+        current.map((message) =>
+          message.id === messageId
+            ? {
+                ...message,
+                reviewAction: {
+                  ...message.reviewAction,
+                  undoRequestedAt: undefined,
+                  undoCompletedAt: undefined,
+                  undoError: undefined,
+                  redoCompletedAt: new Date().toISOString(),
+                  redoError: result.skipped.length
+                    ? `Could not reapply: ${result.skipped.join(', ')}`
+                    : undefined,
+                },
+              }
+            : message,
+        ),
+      );
+    } catch (error) {
+      setMessages((current) =>
+        current.map((message) =>
+          message.id === messageId
+            ? {
+                ...message,
+                reviewAction: {
+                  ...message.reviewAction,
+                  redoError: error instanceof Error ? error.message : String(error),
                 },
               }
             : message,
@@ -1900,6 +1969,7 @@ export function App() {
                         action={message.reviewAction}
                         disabled={sending}
                         onUndo={() => requestUndoChanges(message.id, reviewParsed.review!)}
+                        onRedo={() => requestRedoChanges(message.id, reviewParsed.review!)}
                       />
                     )}
                     {message.error && (
@@ -2009,6 +2079,7 @@ export function App() {
         onToggleCollapsed={() => setInspectorCollapsed((value) => !value)}
         onResize={setInspectorWidth}
         onUndo={(messageId, review) => requestUndoChanges(messageId, review)}
+        onRedo={(messageId, review) => requestRedoChanges(messageId, review)}
       />
       <ProductivityHub
         open={hubOpen}

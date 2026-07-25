@@ -85,20 +85,24 @@ export function ReviewChanges({
   action,
   disabled,
   onUndo,
+  onRedo,
   onFileSelect,
 }: {
   review: ReviewChangesData;
   action?: ReviewAction;
   disabled?: boolean;
   onUndo: () => void;
+  onRedo: () => void;
   onFileSelect?: (file: ReviewFile) => void;
 }) {
   const [open, setOpen] = useState(false);
   const additions = review.files.reduce((total, file) => total + file.additions, 0);
   const deletions = review.files.reduce((total, file) => total + file.deletions, 0);
-  const undoRequested = Boolean(action?.undoRequestedAt && !action.undoError);
-  const undoCompleted = Boolean(action?.undoCompletedAt);
+  const undoRequested = Boolean(action?.undoRequestedAt && !action.undoCompletedAt && !action.undoError);
+  const undoCompleted = Boolean(action?.undoCompletedAt && !action.redoCompletedAt);
+  const redoRequested = Boolean(action?.redoRequestedAt && !action.redoCompletedAt && !action.redoError);
   const undoAvailable = Boolean(action?.snapshotId);
+  const redoAvailable = Boolean(action?.redoSnapshotId);
 
   return (
     <div className={`review-card ${open ? 'open' : ''}`}>
@@ -148,20 +152,33 @@ export function ReviewChanges({
           {open ? 'Hide changes' : 'Review changes'}
           <span>{open ? '⌃' : '⌄'}</span>
         </button>
-        <button
-          type="button"
-          className="undo-button"
-          disabled={disabled || undoCompleted || undoRequested || !undoAvailable}
-          onClick={onUndo}
-        >
-          {undoCompleted
-            ? '✓ Restored'
-            : undoRequested
+        {undoCompleted ? (
+          <button
+            type="button"
+            className="redo-button"
+            disabled={disabled || redoRequested || !redoAvailable}
+            onClick={onRedo}
+          >
+            {redoRequested
+              ? 'Redo requested'
+              : action?.redoError
+                ? '↻ Retry redo'
+                : redoAvailable ? '↷ Redo' : 'Redo unavailable'}
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="undo-button"
+            disabled={disabled || undoRequested || !undoAvailable}
+            onClick={onUndo}
+          >
+            {undoRequested
               ? 'Undo requested'
               : action?.undoError
                 ? '↻ Retry undo'
                 : undoAvailable ? '↶ Undo' : 'Undo unavailable'}
-        </button>
+          </button>
+        )}
       </div>
     </div>
   );

@@ -1404,6 +1404,13 @@ input[type="radio"]:not(:disabled),
 }
 .undo-button:hover:not(:disabled) { border-color: rgba(255,125,138,.38); background: rgba(255,125,138,.1); }
 .undo-button:disabled { color: #637069; border-color: rgba(121,230,170,.1); background: rgba(121,230,170,.03); cursor: default; }
+.redo-button {
+  border: 1px solid rgba(121,230,170,.22);
+  color: #8debb5;
+  background: rgba(121,230,170,.065);
+}
+.redo-button:hover:not(:disabled) { border-color: rgba(121,230,170,.44); background: rgba(121,230,170,.12); }
+.redo-button:disabled { color: #637069; border-color: rgba(121,230,170,.1); background: rgba(121,230,170,.03); cursor: default; }
 
 .conversation-fold {
   width: min(690px, calc(100% - 44px));

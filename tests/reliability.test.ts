@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { parseCopilotStreamEvent } from '../apps/server/src/cli-agents.js';
 import { providerDefinitions } from '../apps/server/src/provider-capabilities.js';
+import { listProviderModels } from '../apps/server/src/provider-models.js';
 import {
   cursorSandboxForPlatform,
   getProviderPermission,
@@ -85,4 +87,75 @@ test('Cursor trusted workspace auto-reviews safe actions without enabling YOLO',
   assert.equal(permission.cursor?.sandbox, 'disabled');
   assert.equal(permission.cursor?.autoReview, true);
   assert.notEqual(permission.cursor?.force, true);
+});
+
+test('Copilot emits only assistant message text and never echoes the internal prompt', () => {
+  const userEvent = parseCopilotStreamEvent({
+    type: 'user.message',
+    data: {
+      content: 'Internal prompt with <relay-review>fake changes</relay-review>',
+    },
+  }, '');
+  assert.deepEqual(userEvent, { snapshot: '', events: [] });
+
+  const firstDelta = parseCopilotStreamEvent({
+    type: 'assistant.message_delta',
+    data: { deltaContent: 'שלו' },
+  }, userEvent.snapshot);
+  const secondDelta = parseCopilotStreamEvent({
+    type: 'assistant.message_delta',
+    data: { deltaContent: 'ם!' },
+  }, firstDelta.snapshot);
+  const finalMessage = parseCopilotStreamEvent({
+    type: 'assistant.message',
+    data: { content: 'שלום!' },
+  }, secondDelta.snapshot);
+
+  assert.deepEqual(firstDelta.events, [{ type: 'text_delta', text: 'שלו' }]);
+  assert.deepEqual(secondDelta.events, [{ type: 'text_delta', text: 'ם!' }]);
+  assert.deepEqual(finalMessage, { snapshot: 'שלום!', events: [] });
+});
+
+test('Copilot reasoning is routed to the collapsible thinking card', () => {
+  assert.deepEqual(parseCopilotStreamEvent({
+    type: 'assistant.reasoning',
+    data: { content: 'Short reasoning summary' },
+  }, 'answer'), {
+    snapshot: 'answer',
+    events: [{
+      type: 'thinking',
+      text: 'Short reasoning summary',
+      delta: false,
+    }],
+  });
+});
+
+test('Copilot catalog matches the installed CLI 1.0.75 model picker', async () => {
+  const models = await listProviderModels('copilot');
+  assert.deepEqual(models.map((model) => model.id), [
+    'auto',
+    'claude-sonnet-5',
+    'claude-sonnet-4.6',
+    'claude-sonnet-4.5',
+    'claude-haiku-4.5',
+    'claude-fable-5',
+    'claude-opus-5',
+    'claude-opus-4.8',
+    'claude-opus-4.8-fast',
+    'claude-opus-4.7',
+    'claude-opus-4.6',
+    'claude-opus-4.5',
+    'gpt-5.6-sol',
+    'gpt-5.6-terra',
+    'gpt-5.6-luna',
+    'gpt-5.5',
+    'gpt-5.4',
+    'gpt-5.3-codex',
+    'gpt-5.4-mini',
+    'gpt-5-mini',
+    'gemini-3.1-pro-preview',
+    'gemini-3.6-flash',
+    'gemini-3.5-flash',
+    'kimi-k2.7-code',
+  ]);
 });

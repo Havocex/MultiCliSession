@@ -13,6 +13,44 @@ import { normalizeSnapshot } from './stream-normalizer.js';
 import { stopProcessTree } from './process-control.js';
 import type { AgentEvent, AgentRunOptions } from './types.js';
 
+export function parseCopilotStreamEvent(
+  event: Record<string, unknown>,
+  snapshot: string,
+): { snapshot: string; events: AgentEvent[] } {
+  const type = String(event.type ?? '');
+  const data = event.data && typeof event.data === 'object'
+    ? event.data as Record<string, unknown>
+    : undefined;
+
+  if (type === 'assistant.message_delta' && typeof data?.deltaContent === 'string') {
+    return {
+      snapshot: snapshot + data.deltaContent,
+      events: data.deltaContent
+        ? [{ type: 'text_delta', text: data.deltaContent }]
+        : [],
+    };
+  }
+
+  if (type === 'assistant.message' && typeof data?.content === 'string') {
+    const normalized = normalizeSnapshot(data.content, snapshot);
+    return {
+      snapshot: normalized.next,
+      events: normalized.delta
+        ? [{ type: 'text_delta', text: normalized.delta }]
+        : [],
+    };
+  }
+
+  if (type === 'assistant.reasoning' && typeof data?.content === 'string' && data.content) {
+    return {
+      snapshot,
+      events: [{ type: 'thinking', text: data.content, delta: false }],
+    };
+  }
+
+  return { snapshot, events: [] };
+}
+
 export async function runSubscriptionAgent(
   options: AgentRunOptions,
   emit: (event: AgentEvent) => void,
@@ -153,28 +191,13 @@ export async function runSubscriptionAgent(
               .join('');
             cursorSnapshot = emitSnapshot(text, cursorSnapshot);
           } else if (options.selection.provider === 'copilot') {
-            const type = String(event.type ?? '');
-            const data = event.data && typeof event.data === 'object'
-              ? event.data as Record<string, unknown>
-              : undefined;
-            const message = event.message && typeof event.message === 'object'
-              ? event.message as Record<string, unknown>
-              : undefined;
-            const text = [
-              event.delta,
-              event.content,
-              event.result,
-              data?.delta,
-              data?.content,
-              message?.content,
-            ].find((value): value is string => typeof value === 'string' && Boolean(value));
-            if (text && (/assistant|message|delta|result|response/i.test(type) || type === '')) {
-              if (/delta/i.test(type)) {
+            const parsed = parseCopilotStreamEvent(event, copilotSnapshot);
+            copilotSnapshot = parsed.snapshot;
+            for (const parsedEvent of parsed.events) {
+              if (parsedEvent.type === 'text_delta') {
                 emittedText = true;
-                emit({ type: 'text_delta', text });
-              } else {
-                copilotSnapshot = emitSnapshot(text, copilotSnapshot);
               }
+              emit(parsedEvent);
             }
           } else if (options.selection.provider === 'kimi') {
             const message = event.message && typeof event.message === 'object'

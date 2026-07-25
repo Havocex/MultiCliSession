@@ -27,6 +27,11 @@ interface WorkspaceArtifact {
   updatedAt: string;
 }
 
+export interface RequestedReviewFile {
+  requestId: string;
+  file: ReviewFile;
+}
+
 function artifactTitle(info: string, fallback: string): string {
   const quoted = info.match(/(?:file|filename|title)=["']([^"']+)["']/i)?.[1];
   const plain = info.match(/(?:file|filename|title)=([^\s]+)/i)?.[1];
@@ -95,6 +100,7 @@ export function WorkspaceInspector({
   workingDirectory,
   workingDirectories,
   requestedReference,
+  requestedReviewFile,
   onClose,
   onToggleCollapsed,
   onResize,
@@ -108,6 +114,7 @@ export function WorkspaceInspector({
   workingDirectory?: string;
   workingDirectories: string[];
   requestedReference?: DiagramReference;
+  requestedReviewFile?: RequestedReviewFile;
   onClose: () => void;
   onToggleCollapsed: () => void;
   onResize: (width: number) => void;
@@ -126,6 +133,13 @@ export function WorkspaceInspector({
     content: string;
     error?: string;
   }>();
+  useEffect(() => {
+    if (!requestedReviewFile) return;
+    setTab('changes');
+    setReferenceOpen(false);
+    setSelectedId(undefined);
+    setSelectedDiff(requestedReviewFile.file);
+  }, [requestedReviewFile]);
   useEffect(() => {
     if (!requestedReference) return;
     setReferenceOpen(true);

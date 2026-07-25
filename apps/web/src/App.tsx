@@ -35,7 +35,10 @@ import {
 import { renderMarkdownLite } from './markdownLite';
 import { ReasoningCard } from './ReasoningCard';
 import { ProviderIcon } from './ProviderIcon';
-import { WorkspaceInspector } from './WorkspaceInspector';
+import {
+  WorkspaceInspector,
+  type RequestedReviewFile,
+} from './WorkspaceInspector';
 import { ProductivityHub } from './ProductivityHub';
 import {
   ReviewChanges,
@@ -109,6 +112,7 @@ export function App() {
   const [historyQuery, setHistoryQuery] = useState('');
   const [hubOpen, setHubOpen] = useState(false);
   const [inspectorReference, setInspectorReference] = useState<DiagramReference>();
+  const [inspectorReviewFile, setInspectorReviewFile] = useState<RequestedReviewFile>();
   const [queueCounts, setQueueCounts] = useState<Record<string, number>>({});
   const abortControllersRef = useRef(new Map<string, AbortController>());
   const promptQueuesRef = useRef(new Map<string, string[]>());
@@ -1051,7 +1055,18 @@ export function App() {
     requestAnimationFrame(() => composerRef.current?.focus());
   };
   const openDiagramReference = (reference: DiagramReference) => {
+    setInspectorReviewFile(undefined);
     setInspectorReference(reference);
+    setInspectorOpen(true);
+    setInspectorCollapsed(false);
+  };
+
+  const openReviewFile = (file: RequestedReviewFile['file']) => {
+    setInspectorReference(undefined);
+    setInspectorReviewFile({
+      requestId: id(),
+      file,
+    });
     setInspectorOpen(true);
     setInspectorCollapsed(false);
   };
@@ -2076,6 +2091,7 @@ export function App() {
                         disabled={sending}
                         onUndo={() => requestUndoChanges(message.id, reviewParsed.review!)}
                         onRedo={() => requestRedoChanges(message.id, reviewParsed.review!)}
+                        onFileSelect={openReviewFile}
                       />
                     )}
                     {message.error && (
@@ -2181,6 +2197,7 @@ export function App() {
           ...(activeProject?.additionalWorkingDirectories ?? []),
         ].filter((directory): directory is string => Boolean(directory))}
         requestedReference={inspectorReference}
+        requestedReviewFile={inspectorReviewFile}
         onClose={() => setInspectorOpen(false)}
         onToggleCollapsed={() => setInspectorCollapsed((value) => !value)}
         onResize={setInspectorWidth}

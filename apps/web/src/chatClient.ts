@@ -40,6 +40,15 @@ export interface ReviewAction {
   redoCompletedAt?: string;
   redoError?: string;
 }
+export interface ChatAttachment {
+  id: string;
+  name: string;
+  mimeType: string;
+  size: number;
+  kind: 'image' | 'document';
+  dataUrl?: string;
+  textContent?: string;
+}
 export interface MessageReasoning {
   content: string;
   status: 'thinking' | 'complete';
@@ -51,6 +60,7 @@ export interface Message {
   id: string;
   role: 'user' | 'assistant' | 'system';
   content: string;
+  attachments?: ChatAttachment[];
   error?: boolean;
   interactionResponse?: InteractionResponse;
   reviewAction?: ReviewAction;
@@ -168,12 +178,30 @@ export async function streamChat(
   );
   const last = chatMessages.at(-1);
   if (!last || last.role !== 'user') throw new Error('The last message must be from the user.');
+  let historicalAttachmentBudget = 5 * 1024 * 1024;
+  const requestHistory = chatMessages.slice(0, -1).map(({ role, content }) => ({
+    role,
+    content,
+    attachments: undefined as ChatAttachment[] | undefined,
+  }));
+  for (let index = requestHistory.length - 1; index >= 0; index -= 1) {
+    const attachments = chatMessages[index]?.attachments ?? [];
+    const selected: ChatAttachment[] = [];
+    for (const attachment of attachments) {
+      if (attachment.size > historicalAttachmentBudget) continue;
+      selected.push(attachment);
+      historicalAttachmentBudget -= attachment.size;
+    }
+    if (selected.length) requestHistory[index]!.attachments = selected;
+    if (historicalAttachmentBudget <= 0) break;
+  }
   const response = await apiFetch('/api/chat', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      history: chatMessages.slice(0, -1).map(({ role, content }) => ({ role, content })),
+      history: requestHistory,
       message: last.content,
+      attachments: last.attachments,
       selection,
       workingDirectory,
       additionalWorkingDirectories,

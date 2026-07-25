@@ -12,7 +12,7 @@ import {
 const app = express();
 app.disable('x-powered-by');
 app.use(secureLocalApi);
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json({ limit: '32mb' }));
 app.get('/api/health', (_req, res) => res.json({ ok: true }));
 app.get('/api/session', exposeSessionToken);
 app.use('/api', requireSessionToken);

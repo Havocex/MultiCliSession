@@ -1875,6 +1875,7 @@ input[type="radio"]:not(:disabled),
 @keyframes reasoning-blink { 50% { opacity: 0; } }
 
 .composer-wrap {
+  position: relative;
   flex: 0 0 auto;
   padding: 10px 32px 17px;
   background: linear-gradient(to top, #0a090f 55%, transparent);
@@ -1952,6 +1953,73 @@ input[type="radio"]:not(:disabled),
   backdrop-filter: blur(22px);
   transition: border-color .22s, box-shadow .22s;
 }
+.attachment-input { display: none; }
+.pending-attachments,
+.message-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+.pending-attachments {
+  padding: 8px 7px 2px 0;
+}
+.pending-attachment,
+.message-attachment {
+  display: grid;
+  grid-template-columns: 30px minmax(0,1fr) auto;
+  align-items: center;
+  gap: 7px;
+  min-width: 145px;
+  max-width: 240px;
+  padding: 5px 6px;
+  border: 1px solid rgba(var(--accent-rgb),.14);
+  border-radius: 10px;
+  background: rgba(var(--accent-rgb),.045);
+}
+.pending-attachment img,
+.message-attachment img {
+  width: 30px;
+  height: 30px;
+  object-fit: cover;
+  border-radius: 7px;
+}
+.pending-attachment > span,
+.message-attachment > span {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 7px;
+  color: var(--accent);
+  background: rgba(var(--accent-rgb),.08);
+}
+.pending-attachment div,
+.message-attachment div { min-width: 0; }
+.pending-attachment strong,
+.message-attachment strong {
+  display: block;
+  overflow: hidden;
+  color: #aaa3b3;
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pending-attachment small,
+.message-attachment small { color: #625c6a; font-size: 8px; }
+.pending-attachment button {
+  width: 21px;
+  height: 21px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  color: #766e7e;
+  background: transparent;
+}
+.pending-attachment button:hover { color: #f2a0aa; background: rgba(255,125,138,.08); }
+.message-attachments { margin: 7px 0 9px; }
+.message-attachment { grid-template-columns: 36px minmax(0,1fr); min-width: 170px; }
+.message-attachment img,
+.message-attachment > span { width: 36px; height: 36px; }
 .composer:focus-within, .composer.has-content {
   border-color: rgba(var(--accent-rgb),.38);
   box-shadow: 0 15px 55px rgba(0,0,0,.38), 0 0 0 3px rgba(var(--accent-rgb),.055);
@@ -1973,6 +2041,26 @@ input[type="radio"]:not(:disabled),
 }
 .composer textarea::placeholder { color: #625d6c; }
 .composer-bottom { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 34px; }
+.composer-tools { display: flex; align-items: center; min-width: 0; gap: 8px; }
+.attachment-button {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 27px;
+  height: 27px;
+  padding: 0;
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 8px;
+  color: #8e8698;
+  background: rgba(255,255,255,.03);
+  font-size: 15px;
+}
+.attachment-button:hover:not(:disabled) {
+  border-color: rgba(var(--accent-rgb),.28);
+  color: #d8cfff;
+  background: rgba(var(--accent-rgb),.08);
+}
+.attachment-button:disabled { opacity: .35; cursor: default; }
 .composer-context { display: flex; align-items: center; gap: 7px; color: #6c6676; font-size: 9px; }
 .composer-context i { width: 1px; height: 10px; background: rgba(255,255,255,.1); }
 .mini-dot { width: 5px; height: 5px; }
@@ -2015,6 +2103,30 @@ input[type="radio"]:not(:disabled),
   color: #716b7c;
   background: rgba(255,255,255,.025);
   font: inherit;
+}
+.attachment-drop-overlay {
+  position: absolute;
+  z-index: 8;
+  inset: -6px 24px 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  border: 1px dashed rgba(var(--accent-rgb),.55);
+  border-radius: 18px;
+  color: #dcd3f1;
+  background: rgba(12,10,17,.92);
+  box-shadow: 0 0 34px rgba(var(--accent-rgb),.12);
+  backdrop-filter: blur(14px);
+  pointer-events: none;
+}
+.attachment-drop-overlay span { color: var(--accent); font-size: 19px; }
+.attachment-drop-overlay strong { font-size: 11px; }
+.attachment-error {
+  width: min(850px, 100%);
+  margin: 6px auto -1px;
+  color: #e58f99;
+  font-size: 9px;
 }
 
 .workspace-inspector {

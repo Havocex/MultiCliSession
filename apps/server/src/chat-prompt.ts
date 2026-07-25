@@ -74,6 +74,20 @@ export function buildChatPrompt(options: AgentRunOptions): string {
       lines.push('', `--- ${file.path} ---`, file.content);
     }
   }
+  if (options.attachments?.length) {
+    lines.push('', 'Files explicitly attached by the user:');
+    for (const attachment of options.attachments) {
+      lines.push(
+        '',
+        `--- Attachment: ${attachment.name} (${attachment.mimeType}, ${attachment.size} bytes) ---`,
+      );
+      if (attachment.textContent) {
+        lines.push(attachment.textContent);
+      } else if (attachment.path) {
+        lines.push(`The attachment is available at this temporary path: ${attachment.path}`);
+      }
+    }
+  }
   if (options.history.length) {
     lines.push('', 'Conversation:');
     for (const message of options.history) {

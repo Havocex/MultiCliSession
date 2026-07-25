@@ -12,6 +12,16 @@ export interface AgentSelection {
 export interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
+  attachments?: AgentAttachment[];
+}
+
+export interface AgentAttachment {
+  name: string;
+  mimeType: string;
+  size: number;
+  kind: 'image' | 'document';
+  path?: string;
+  textContent?: string;
 }
 
 export type AgentEvent =
@@ -30,4 +40,5 @@ export interface AgentRunOptions {
   signal: AbortSignal;
   projectMemory?: string;
   contextFiles?: Array<{ path: string; content: string }>;
+  attachments?: AgentAttachment[];
 }

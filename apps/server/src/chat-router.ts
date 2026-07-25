@@ -4,6 +4,7 @@ import { readdir, readFile, stat } from 'node:fs/promises';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { promisify } from 'node:util';
 import { runCodex } from './codex-agent.js';
+import { materializeChatAttachments } from './chat-attachments.js';
 import { runSubscriptionAgent } from './cli-agents.js';
 import { getProviderModelCatalog, listProviderModels } from './provider-models.js';
 import { providerDefinitions } from './provider-capabilities.js';
@@ -283,6 +284,7 @@ chatRouter.post('/', async (req, res) => {
     additionalWorkingDirectories?: unknown;
     projectMemory?: unknown;
     contextFiles?: unknown;
+    attachments?: unknown;
   };
   if (typeof body?.message !== 'string' || !body.message.trim()) {
     res.status(400).json({ error: 'A non-empty message is required.' });
@@ -292,14 +294,17 @@ chatRouter.post('/', async (req, res) => {
     res.status(413).json({ error: 'The message is too large.' });
     return;
   }
-  const history = boundedHistory(Array.isArray(body.history)
+  const rawHistory = Array.isArray(body.history)
     ? body.history.filter(
         (item): item is ChatMessage =>
           item && typeof item === 'object' &&
           ((item as ChatMessage).role === 'user' || (item as ChatMessage).role === 'assistant') &&
           typeof (item as ChatMessage).content === 'string',
       ).slice(-40)
-    : []);
+    : [];
+  const history = boundedHistory(
+    rawHistory.map(({ role, content }) => ({ role, content })),
+  );
   const requestedProvider = body.selection?.provider;
   const provider: AgentProvider =
     requestedProvider === 'claude' || requestedProvider === 'cursor' ||
@@ -386,6 +391,23 @@ chatRouter.post('/', async (req, res) => {
   const snapshotId = permission.workspaceAccess
     ? await createWorkspaceSnapshot(workingDirectory ?? configuredWorkspace())
     : undefined;
+  const currentAttachments = Array.isArray(body.attachments) ? body.attachments : [];
+  const historicalAttachments = rawHistory
+    .slice()
+    .reverse()
+    .flatMap((message) => Array.isArray(message.attachments) ? message.attachments : []);
+  let attachmentBundle;
+  try {
+    attachmentBundle = await materializeChatAttachments([
+      ...currentAttachments,
+      ...historicalAttachments,
+    ]);
+  } catch (error) {
+    res.status(400).json({
+      error: error instanceof Error ? error.message : 'Could not prepare the attachments.',
+    });
+    return;
+  }
 
   res.writeHead(200, {
     'Content-Type': 'text/event-stream; charset=utf-8',
@@ -429,6 +451,7 @@ chatRouter.post('/', async (req, res) => {
       signal: controller.signal,
       projectMemory,
       contextFiles,
+      attachments: attachmentBundle.attachments,
     }, send);
     if (timedOut) {
       send({
@@ -446,6 +469,7 @@ chatRouter.post('/', async (req, res) => {
         : error instanceof Error ? error.message : String(error),
     });
   } finally {
+    await attachmentBundle.cleanup().catch(() => undefined);
     clearTimeout(watchdog);
     clearInterval(heartbeat);
     if (!res.writableEnded) res.end();

@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { buildChatPrompt } from './chat-prompt.js';
 import { resolveCodexCli, subscriptionEnv } from './codex-session.js';
 import { configuredWorkspace, getProviderPermission } from './provider-permissions.js';
@@ -40,7 +40,15 @@ export async function runCodex(
       '-s', permission.codex!.sandbox,
       '-C', workspace,
       ...(permission.workspaceAccess
-        ? (options.additionalWorkingDirectories ?? []).flatMap((directory) => ['--add-dir', directory])
+        ? [
+            ...(options.additionalWorkingDirectories ?? []),
+            ...new Set(
+              (options.attachments ?? [])
+                .map((attachment) => attachment.path)
+                .filter((path): path is string => Boolean(path))
+                .map((path) => dirname(path)),
+            ),
+          ].flatMap((directory) => ['--add-dir', directory])
         : []),
       '-m', options.selection.modelId,
       '--disable', 'apps',
@@ -54,7 +62,11 @@ export async function runCodex(
     }
     if (options.selection.fast) args.push('-c', "service_tier='fast'");
     args.push(
-      'exec', '--json', '--ephemeral', '--ignore-user-config', '--ignore-rules',
+      'exec',
+      ...(options.attachments ?? [])
+        .filter((attachment) => attachment.kind === 'image' && attachment.path)
+        .flatMap((attachment) => ['--image', attachment.path!]),
+      '--json', '--ephemeral', '--ignore-user-config', '--ignore-rules',
       '--skip-git-repo-check', '--color', 'never', buildChatPrompt(options),
     );
 

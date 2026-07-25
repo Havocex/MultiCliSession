@@ -7,6 +7,7 @@ import {
   streamChat,
   undoWorkspaceFiles,
   type AgentSnapshot,
+  type ChatAttachment,
   type Effort,
   type InteractionResponse,
   type Message,
@@ -91,6 +92,9 @@ const compactWorkspacePath = (value?: string) => {
 
 export function App() {
   const [draft, setDraft] = useState('');
+  const [pendingAttachments, setPendingAttachments] = useState<ChatAttachment[]>([]);
+  const [attachmentError, setAttachmentError] = useState('');
+  const [draggingFiles, setDraggingFiles] = useState(false);
   const [options, setOptions] = useState<Options>();
   const [selection, setSelection] = useState<Selection>();
   const [runStates, setRunStates] = useState<Record<string, 'running' | 'done' | 'error'>>({});
@@ -131,6 +135,7 @@ export function App() {
   const autoScrollRef = useRef(true);
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const importProjectRef = useRef<HTMLInputElement>(null);
+  const attachmentInputRef = useRef<HTMLInputElement>(null);
 
   const activeProject = library?.projects.find((project) => project.id === library.activeProjectId);
   const activeSession = activeProject?.sessions.find(
@@ -784,12 +789,99 @@ export function App() {
     });
   };
 
+  const addAttachments = async (files: File[]) => {
+    if (sending || !files.length) return;
+    const maximumFileBytes = 3 * 1024 * 1024;
+    const maximumTotalBytes = 5 * 1024 * 1024;
+    const maximumSessionAttachmentBytes = 20 * 1024 * 1024;
+    const maximumAttachments = 6;
+    const currentBytes = pendingAttachments.reduce((total, attachment) => total + attachment.size, 0);
+    const sessionBytes = messages.reduce(
+      (total, message) =>
+        total + (message.attachments ?? []).reduce(
+          (messageTotal, attachment) => messageTotal + attachment.size,
+          0,
+        ),
+      0,
+    );
+    const availableSlots = Math.max(0, maximumAttachments - pendingAttachments.length);
+    const selected: ChatAttachment[] = [];
+    let selectedBytes = 0;
+    let error = '';
+
+    for (const file of files.slice(0, availableSlots)) {
+      const extension = file.name.split('.').pop()?.toLowerCase() ?? '';
+      const rasterImage = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(file.type);
+      const textDocument =
+        file.type.startsWith('text/') ||
+        ['txt', 'md', 'json', 'csv', 'xml', 'yaml', 'yml', 'log', 'ts', 'tsx', 'js', 'jsx', 'py', 'sql'].includes(extension);
+      const binaryDocument =
+        ['pdf', 'doc', 'docx'].includes(extension) ||
+        [
+          'application/pdf',
+          'application/msword',
+          'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        ].includes(file.type);
+      if (!rasterImage && !textDocument && !binaryDocument) {
+        error = `${file.name} is not a supported image or document.`;
+        continue;
+      }
+      if (!file.size || file.size > maximumFileBytes) {
+        error = `${file.name} exceeds the 3 MB file limit.`;
+        continue;
+      }
+      if (currentBytes + selectedBytes + file.size > maximumTotalBytes) {
+        error = 'Attachments exceed the 5 MB total limit.';
+        break;
+      }
+      if (sessionBytes + currentBytes + selectedBytes + file.size > maximumSessionAttachmentBytes) {
+        error = 'This session has reached its 20 MB attachment storage limit.';
+        break;
+      }
+      try {
+        const attachment: ChatAttachment = {
+          id: id(),
+          name: file.name.slice(0, 160),
+          mimeType: file.type || 'application/octet-stream',
+          size: file.size,
+          kind: rasterImage ? 'image' : 'document',
+        };
+        if (textDocument) {
+          attachment.textContent = await file.text();
+        } else {
+          attachment.dataUrl = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => typeof reader.result === 'string'
+              ? resolve(reader.result)
+              : reject(new Error('Could not read the file.'));
+            reader.onerror = () => reject(reader.error ?? new Error('Could not read the file.'));
+            reader.readAsDataURL(file);
+          });
+        }
+        selected.push(attachment);
+        selectedBytes += file.size;
+      } catch {
+        error = `Could not read ${file.name}.`;
+      }
+    }
+    if (files.length > availableSlots) error = `You can attach up to ${maximumAttachments} files.`;
+    if (selected.length) setPendingAttachments((current) => [...current, ...selected]);
+    setAttachmentError(error);
+  };
+
+  useEffect(() => {
+    setPendingAttachments([]);
+    setAttachmentError('');
+    setDraggingFiles(false);
+  }, [activeProject?.id, activeSession?.id]);
+
   const sendText = async (
     rawText: string,
     baseMessages: Message[] = messages,
     clearComposer = false,
+    attachments: ChatAttachment[] = [],
   ) => {
-    const text = rawText.trim();
+    const text = rawText.trim() || (attachments.length ? 'Please review the attached files.' : '');
     const targetProject = activeProject;
     const targetSession = activeSession;
     const selectionSnapshot = selection;
@@ -801,7 +893,12 @@ export function App() {
     }
     const runKey = `${targetProject.id}:${targetSession.id}`;
     if (abortControllersRef.current.has(runKey)) return;
-    const user: Message = { id: id(), role: 'user', content: text };
+    const user: Message = {
+      id: id(),
+      role: 'user',
+      content: text,
+      attachments: attachments.length ? attachments : undefined,
+    };
     const assistant: Message = {
       id: id(),
       role: 'assistant',
@@ -824,7 +921,11 @@ export function App() {
     ) => setSessionMessages(targetProject.id, targetSession.id, update);
     updateTargetMessages([...turn, assistant]);
     autoScrollRef.current = true;
-    if (clearComposer) resizeComposer('');
+    if (clearComposer) {
+      resizeComposer('');
+      setPendingAttachments([]);
+      setAttachmentError('');
+    }
     const controller = new AbortController();
     abortControllersRef.current.set(runKey, controller);
     setRunStates((current) => ({ ...current, [runKey]: 'running' }));
@@ -1009,8 +1110,12 @@ export function App() {
 
   const send = async () => {
     const text = draft.trim();
-    if (!text || !activeRunKey) return;
+    if ((!text && !pendingAttachments.length) || !activeRunKey) return;
     if (sending) {
+      if (pendingAttachments.length) {
+        setAttachmentError('Wait for the current run to finish before sending attachments.');
+        return;
+      }
       const queue = promptQueuesRef.current.get(activeRunKey) ?? [];
       queue.push(text);
       promptQueuesRef.current.set(activeRunKey, queue);
@@ -1019,7 +1124,7 @@ export function App() {
       resizeComposer('');
       return;
     }
-    await sendText(text, messages, true);
+    await sendText(text, messages, true, pendingAttachments);
   };
 
   useEffect(() => {
@@ -1039,7 +1144,12 @@ export function App() {
     let userIndex = assistantIndex - 1;
     while (userIndex >= 0 && messages[userIndex]?.role !== 'user') userIndex -= 1;
     if (userIndex < 0) return;
-    void sendText(messages[userIndex]!.content, messages.slice(0, userIndex));
+    void sendText(
+      messages[userIndex]!.content,
+      messages.slice(0, userIndex),
+      false,
+      messages[userIndex]!.attachments,
+    );
   };
   const requestDiagramUpdate = (
     instruction: string,
@@ -2060,6 +2170,27 @@ export function App() {
                         </button>
                       )}
                     </div>
+                    {message.attachments?.length ? (
+                      <div className="message-attachments">
+                        {message.attachments.map((attachment) => (
+                          <div
+                            className={`message-attachment ${attachment.kind}`}
+                            key={attachment.id}
+                            title={attachment.name}
+                          >
+                            {attachment.kind === 'image' && attachment.dataUrl ? (
+                              <img src={attachment.dataUrl} alt={attachment.name} />
+                            ) : (
+                              <span>▤</span>
+                            )}
+                            <div>
+                              <strong>{attachment.name}</strong>
+                              <small>{Math.max(1, Math.round(attachment.size / 1024))} KB</small>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
                     {message.reasoning && <ReasoningCard reasoning={message.reasoning} />}
                     <div className="message-content" dir="auto">
                       {parsed.displayContent
@@ -2115,7 +2246,29 @@ export function App() {
           </div>
         </section>
 
-        <footer className="composer-wrap">
+        <footer
+          className={`composer-wrap ${draggingFiles ? 'dragging-files' : ''}`}
+          onDragEnter={(event) => {
+            if (!event.dataTransfer.types.includes('Files')) return;
+            event.preventDefault();
+            if (!sending) setDraggingFiles(true);
+          }}
+          onDragOver={(event) => {
+            if (!event.dataTransfer.types.includes('Files')) return;
+            event.preventDefault();
+            event.dataTransfer.dropEffect = sending ? 'none' : 'copy';
+          }}
+          onDragLeave={(event) => {
+            if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+              setDraggingFiles(false);
+            }
+          }}
+          onDrop={(event) => {
+            event.preventDefault();
+            setDraggingFiles(false);
+            if (!sending) void addAttachments(Array.from(event.dataTransfer.files));
+          }}
+        >
           <div className="session-context-toasts" aria-label="Active session context">
             <div className="session-context-toast project" title={activeProject?.name ?? 'No active project'}>
               <span>◇</span>
@@ -2153,6 +2306,46 @@ export function App() {
             </div>
           </div>
           <div className={`composer ${draft.trim() ? 'has-content' : ''}`}>
+            <input
+              ref={attachmentInputRef}
+              className="attachment-input"
+              type="file"
+              multiple
+              accept="image/png,image/jpeg,image/webp,image/gif,.pdf,.doc,.docx,.txt,.md,.json,.csv,.xml,.yaml,.yml,.log,.ts,.tsx,.js,.jsx,.py,.sql"
+              aria-label="Attach files"
+              onChange={(event) => {
+                void addAttachments(Array.from(event.target.files ?? []));
+                event.target.value = '';
+              }}
+            />
+            {pendingAttachments.length ? (
+              <div className="pending-attachments">
+                {pendingAttachments.map((attachment) => (
+                  <div className={`pending-attachment ${attachment.kind}`} key={attachment.id}>
+                    {attachment.kind === 'image' && attachment.dataUrl ? (
+                      <img src={attachment.dataUrl} alt="" />
+                    ) : (
+                      <span>▤</span>
+                    )}
+                    <div>
+                      <strong>{attachment.name}</strong>
+                      <small>{Math.max(1, Math.round(attachment.size / 1024))} KB</small>
+                    </div>
+                    <button
+                      type="button"
+                      aria-label={`Remove ${attachment.name}`}
+                      onClick={() =>
+                        setPendingAttachments((current) =>
+                          current.filter((item) => item.id !== attachment.id),
+                        )
+                      }
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : null}
             <textarea
               ref={composerRef}
               value={draft}
@@ -2170,17 +2363,29 @@ export function App() {
               }}
             />
             <div className="composer-bottom">
-              <div className="composer-context">
-                <span className={`mini-dot ${connected ? 'online' : ''}`} />
-                <span>{activeProvider?.label ?? 'Provider'}</span>
-                <i />
-                <span>{selection?.effort ?? 'medium'} reasoning</span>
-                {activePermission && (
-                  <>
-                    <i />
-                    <span>{activePermission.label}</span>
-                  </>
-                )}
+              <div className="composer-tools">
+                <button
+                  type="button"
+                  className="attachment-button"
+                  disabled={sending || !activeProject?.workingDirectory?.trim()}
+                  aria-label="Attach images or documents"
+                  title="Attach images or documents"
+                  onClick={() => attachmentInputRef.current?.click()}
+                >
+                  ＋
+                </button>
+                <div className="composer-context">
+                  <span className={`mini-dot ${connected ? 'online' : ''}`} />
+                  <span>{activeProvider?.label ?? 'Provider'}</span>
+                  <i />
+                  <span>{selection?.effort ?? 'medium'} reasoning</span>
+                  {activePermission && (
+                    <>
+                      <i />
+                      <span>{activePermission.label}</span>
+                    </>
+                  )}
+                </div>
               </div>
               {sending ? (
                 <button
@@ -2196,7 +2401,7 @@ export function App() {
                   type="button"
                   className="send-button"
                   disabled={
-                    !draft.trim() ||
+                    (!draft.trim() && !pendingAttachments.length) ||
                     !selection ||
                     !connected ||
                     !activeProject?.workingDirectory?.trim()
@@ -2208,6 +2413,15 @@ export function App() {
               )}
             </div>
           </div>
+          {draggingFiles && (
+            <div className="attachment-drop-overlay">
+              <span>＋</span>
+              <strong>Drop images or documents here</strong>
+            </div>
+          )}
+          {attachmentError && (
+            <div className="attachment-error" role="alert">{attachmentError}</div>
+          )}
           <div className="composer-hint">
             <span><kbd>Enter</kbd> to send</span>
             <span><kbd>Shift</kbd> + <kbd>Enter</kbd> for a new line</span>

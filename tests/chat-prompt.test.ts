@@ -80,3 +80,25 @@ test('identifies additional project workspace roots', () => {
   assert.match(prompt, /C:\\workspace\\shared-library/);
   assert.match(prompt, /C:\\workspace\\service/);
 });
+
+test('includes explicitly attached text documents in the agent context', () => {
+  const prompt = buildChatPrompt({
+    history: [],
+    message: 'Summarize the attachment',
+    attachments: [{
+      name: 'notes.md',
+      mimeType: 'text/markdown',
+      size: 18,
+      kind: 'document',
+      textContent: '# Release notes',
+    }],
+    selection: {
+      provider: 'codex',
+      modelId: 'test-model',
+      permissionId: 'codex-chat',
+    },
+    signal: new AbortController().signal,
+  });
+  assert.match(prompt, /Attachment: notes\.md/);
+  assert.match(prompt, /# Release notes/);
+});

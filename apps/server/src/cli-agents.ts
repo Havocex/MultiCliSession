@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { buildChatPrompt } from './chat-prompt.js';
 import {
   configuredWorkspace,
@@ -33,7 +33,15 @@ export async function runSubscriptionAgent(
   try {
     const prompt = buildChatPrompt(options);
     const additionalDirectories = permission.workspaceAccess
-      ? options.additionalWorkingDirectories ?? []
+      ? [
+          ...(options.additionalWorkingDirectories ?? []),
+          ...new Set(
+            (options.attachments ?? [])
+              .map((attachment) => attachment.path)
+              .filter((path): path is string => Boolean(path))
+              .map((path) => dirname(path)),
+          ),
+        ]
       : [];
     const hermesModel = options.selection.provider === 'hermes'
       ? options.selection.modelId.split('::', 2)

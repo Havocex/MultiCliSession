@@ -49,7 +49,12 @@ export function buildChatPrompt(options: AgentRunOptions): string {
     options.selection.permissionId,
   );
   const accessInstruction = permission.workspaceAccess
-    ? `You may use the configured workspace only as allowed by the active "${permission.label}" provider policy. Respect its limits and do not claim access you do not have.`
+    ? [
+        `The active provider policy for this request is "${permission.label}": ${permission.description}`,
+        'Treat access limitations mentioned earlier in the conversation as historical context, not as the current policy.',
+        'Before claiming that an operation is blocked, attempt a safe, relevant check with the available tools and report the actual error.',
+        'Respect the active policy and do not claim access you do not have.',
+      ].join(' ')
     : 'Answer directly from the conversation. Do not access files, run commands, browse, or use tools.';
   const lines = [
     'You are a helpful AI assistant in an interactive text chat.',

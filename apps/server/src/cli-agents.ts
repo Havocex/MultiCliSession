@@ -51,6 +51,10 @@ export async function runSubscriptionAgent(
           ...launch.prefixArgs, '-p', '--verbose', '--output-format', 'stream-json',
           '--include-partial-messages', '--no-session-persistence', '--permission-mode',
           permission.claude!.mode, '--tools', permission.claude!.tools,
+          '--strict-mcp-config',
+          ...(permission.claude!.mode === 'bypassPermissions'
+            ? ['--dangerously-skip-permissions']
+            : []),
           ...additionalDirectories.flatMap((directory) => ['--add-dir', directory]),
           '--model', options.selection.modelId,
           ...(options.selection.effort ? ['--effort', options.selection.effort] : []),
@@ -136,6 +140,7 @@ export async function runSubscriptionAgent(
           if (options.selection.provider === 'claude' && event.type === 'stream_event') {
             const stream = event.event as { type?: string; delta?: { type?: string; text?: string; thinking?: string } };
             if (stream?.type === 'content_block_delta' && stream.delta?.type === 'text_delta' && stream.delta.text) {
+              emittedText = true;
               emit({ type: 'text_delta', text: stream.delta.text });
             } else if (stream?.delta?.thinking) {
               emit({ type: 'thinking', text: stream.delta.thinking, delta: true });

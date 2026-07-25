@@ -137,10 +137,11 @@ const permissions: Record<AgentProvider, ProviderPermissionRuntime[]> = {
     {
       id: 'cursor-trusted',
       label: 'Trusted workspace',
-      description: 'Sandbox is disabled, but force/yolo execution remains off.',
+      description:
+        'Sandbox is disabled and safe actions are auto-reviewed; force/yolo execution remains off.',
       risk: 'caution',
       workspaceAccess: true,
-      cursor: { sandbox: 'disabled' },
+      cursor: { sandbox: 'disabled', autoReview: true },
     },
     {
       id: 'cursor-full',

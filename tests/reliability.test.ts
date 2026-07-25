@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { providerDefinitions } from '../apps/server/src/provider-capabilities.js';
-import { cursorSandboxForPlatform } from '../apps/server/src/provider-permissions.js';
+import {
+  cursorSandboxForPlatform,
+  getProviderPermission,
+} from '../apps/server/src/provider-permissions.js';
 import {
   mergeChatLibraries,
   type ChatLibrary,
@@ -75,4 +78,11 @@ test('Cursor falls back to allowlist mode on Windows', () => {
   assert.equal(cursorSandboxForPlatform('enabled', 'win32'), 'disabled');
   assert.equal(cursorSandboxForPlatform('enabled', 'linux'), 'enabled');
   assert.equal(cursorSandboxForPlatform('disabled', 'darwin'), 'disabled');
+});
+
+test('Cursor trusted workspace auto-reviews safe actions without enabling YOLO', () => {
+  const permission = getProviderPermission('cursor', 'cursor-trusted');
+  assert.equal(permission.cursor?.sandbox, 'disabled');
+  assert.equal(permission.cursor?.autoReview, true);
+  assert.notEqual(permission.cursor?.force, true);
 });

@@ -81,6 +81,25 @@ test('identifies additional project workspace roots', () => {
   assert.match(prompt, /C:\\workspace\\service/);
 });
 
+test('states the current provider policy and invalidates stale access claims', () => {
+  const prompt = buildChatPrompt({
+    history: [{
+      role: 'assistant',
+      content: 'Git is read-only in the previous environment.',
+    }],
+    message: 'Commit the current files',
+    selection: {
+      provider: 'claude',
+      modelId: 'test-model',
+      permissionId: 'claude-full',
+    },
+    signal: new AbortController().signal,
+  });
+  assert.match(prompt, /active provider policy.*"Bypass permissions"/i);
+  assert.match(prompt, /historical context, not as the current policy/);
+  assert.match(prompt, /attempt a safe, relevant check/);
+});
+
 test('includes explicitly attached text documents in the agent context', () => {
   const prompt = buildChatPrompt({
     history: [],

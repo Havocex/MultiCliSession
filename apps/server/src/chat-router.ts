@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { execFile } from 'node:child_process';
 import { readdir, readFile, stat } from 'node:fs/promises';
-import { join, relative, resolve, sep } from 'node:path';
+import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { promisify } from 'node:util';
 import { runCodex } from './codex-agent.js';
 import { runSubscriptionAgent } from './cli-agents.js';
@@ -123,6 +123,43 @@ chatRouter.get('/workspace-artifacts', async (req, res) => {
   } catch {
     res.status(400).json({ error: `Could not read project working directory: ${root}` });
   }
+});
+
+chatRouter.post('/workspace-file', async (req, res) => {
+  const roots: string[] = Array.isArray(req.body?.roots)
+    ? req.body.roots
+        .filter((value: unknown): value is string => typeof value === 'string' && Boolean(value.trim()))
+        .slice(0, 20)
+        .map((value: string) => resolve(value.trim()))
+    : [];
+  const requestedFile = typeof req.body?.file === 'string' ? req.body.file.trim() : '';
+  if (!roots.length || !requestedFile) {
+    res.status(400).json({ error: 'Workspace roots and a file are required.' });
+    return;
+  }
+  const candidates: string[] = isAbsolute(requestedFile)
+    ? [resolve(requestedFile)]
+    : roots.map((root) => resolve(root, requestedFile));
+  for (const absolute of candidates) {
+    const root = roots.find((candidate) =>
+      absolute === candidate || absolute.startsWith(`${candidate}${sep}`),
+    );
+    if (!root) continue;
+    try {
+      const details = await stat(absolute);
+      if (!details.isFile() || details.size > 2 * 1024 * 1024) continue;
+      const content = await readFile(absolute, 'utf8');
+      res.json({
+        path: relative(root, absolute).replaceAll('\\', '/'),
+        root,
+        content,
+      });
+      return;
+    } catch {
+      // Try the same relative path under the next configured root.
+    }
+  }
+  res.status(404).json({ error: 'The referenced file was not found in the project folders.' });
 });
 
 chatRouter.post('/workspace-undo', async (req, res) => {

@@ -37,6 +37,18 @@ read-only, workspace-write, and unrestricted filesystem modes. Claude Code and C
 show the equivalent modes supported by their installed CLIs. New sessions start in
 the safest chat-only mode.
 
+## Dynamic diagrams
+
+Assistants can return a validated `relay-visual` block that is rendered as a secure,
+interactive Mermaid card. Diagram cards support zoom, fullscreen mode, source view,
+revision history, source copying, SVG/PNG export, agent-assisted updates and repair,
+and links back to referenced workspace files. The latest revision also appears in the
+Artifacts sidebar.
+
+Only the `mermaid` renderer is accepted. HTML and executable renderers are rejected,
+Mermaid runs with strict security settings, and its code is loaded lazily only when a
+conversation contains a diagram.
+
 Workspace-enabled modes use this repository by default. Set `RELAY_WORKSPACE_PATH` on
 the server process to point agent sessions at a different project directory.
 

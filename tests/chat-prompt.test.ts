@@ -24,7 +24,8 @@ test('removes UI protocol blocks from conversation history', () => {
       role: 'assistant',
       content:
         'Visible answer\n<relay-question>{"prompt":"Choose"}</relay-question>' +
-        '\n<relay-review>{"files":[]}</relay-review>',
+        '\n<relay-review>{"files":[]}</relay-review>' +
+        '\n<relay-visual>{"renderer":"mermaid","source":"flowchart TD"}</relay-visual>',
     }],
     message: 'Continue',
     selection: {
@@ -37,6 +38,7 @@ test('removes UI protocol blocks from conversation history', () => {
   assert.match(prompt, /ASSISTANT: Visible answer/);
   assert.doesNotMatch(prompt.split('Conversation:')[1] ?? '', /<relay-question>/);
   assert.doesNotMatch(prompt.split('Conversation:')[1] ?? '', /<relay-review>/);
+  assert.doesNotMatch(prompt.split('Conversation:')[1] ?? '', /<relay-visual>/);
 });
 
 test('includes project memory and explicitly selected context files', () => {

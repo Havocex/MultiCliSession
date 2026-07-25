@@ -3,12 +3,20 @@ import { apiFetch } from './apiClient';
 import type { Message } from './chatClient';
 import { renderMarkdownLite } from './markdownLite';
 import { parseReviewContent, ReviewChanges, type ReviewFile } from './ReviewChanges';
+import {
+  DiagramCard,
+  parseDiagramContent,
+  type DiagramData,
+  type DiagramReference,
+} from './DiagramCard';
 
 interface Artifact {
   id: string;
   title: string;
-  kind: 'Markdown' | 'Plan';
+  kind: 'Markdown' | 'Plan' | 'Diagram';
   content: string;
+  diagram?: DiagramData;
+  diagramHistory?: DiagramData[];
 }
 
 interface WorkspaceArtifact {
@@ -27,9 +35,16 @@ function artifactTitle(info: string, fallback: string): string {
 
 function collectArtifacts(messages: Message[]): Artifact[] {
   const artifacts: Artifact[] = [];
+  const diagrams = new Map<string, DiagramData[]>();
   for (const message of messages) {
     if (message.role !== 'assistant' || !message.content) continue;
-    const display = parseReviewContent(message.content).displayContent;
+    const diagramParsed = parseDiagramContent(message.content);
+    if (diagramParsed.diagram) {
+      const history = diagrams.get(diagramParsed.diagram.id) ?? [];
+      history.push(diagramParsed.diagram);
+      diagrams.set(diagramParsed.diagram.id, history);
+    }
+    const display = parseReviewContent(diagramParsed.displayContent).displayContent;
     const fence = /```([^\n`]*)\n([\s\S]*?)```/g;
     let match: RegExpExecArray | null;
     let foundMarkdown = false;
@@ -57,6 +72,18 @@ function collectArtifacts(messages: Message[]): Artifact[] {
       });
     }
   }
+  for (const [diagramId, history] of diagrams) {
+    history.sort((left, right) => left.revision - right.revision);
+    const diagram = history.at(-1)!;
+    artifacts.push({
+      id: `diagram-${diagramId}`,
+      title: diagram.title,
+      kind: 'Diagram',
+      content: diagram.source,
+      diagram,
+      diagramHistory: history,
+    });
+  }
   return artifacts.slice(-20).reverse();
 }
 
@@ -66,6 +93,8 @@ export function WorkspaceInspector({
   collapsed,
   sending,
   workingDirectory,
+  workingDirectories,
+  requestedReference,
   onClose,
   onToggleCollapsed,
   onResize,
@@ -76,6 +105,8 @@ export function WorkspaceInspector({
   collapsed: boolean;
   sending: boolean;
   workingDirectory?: string;
+  workingDirectories: string[];
+  requestedReference?: DiagramReference;
   onClose: () => void;
   onToggleCollapsed: () => void;
   onResize: (width: number) => void;
@@ -86,6 +117,54 @@ export function WorkspaceInspector({
   const [selectedDiff, setSelectedDiff] = useState<ReviewFile>();
   const [diffLines, setDiffLines] = useState<Array<{ type: 'add' | 'remove' | 'context'; content: string }>>([]);
   const [workspaceArtifacts, setWorkspaceArtifacts] = useState<WorkspaceArtifact[]>([]);
+  const [referenceOpen, setReferenceOpen] = useState(false);
+  const [referencePreview, setReferencePreview] = useState<{
+    path: string;
+    root: string;
+    content: string;
+    error?: string;
+  }>();
+  useEffect(() => {
+    if (!requestedReference) return;
+    setReferenceOpen(true);
+    setSelectedId(undefined);
+    setSelectedDiff(undefined);
+    setReferencePreview({ path: requestedReference.file, root: '', content: '' });
+    const controller = new AbortController();
+    void apiFetch('/api/chat/workspace-file', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ roots: workingDirectories, file: requestedReference.file }),
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        const body = await response.json() as {
+          path?: string;
+          root?: string;
+          content?: string;
+          error?: string;
+        };
+        if (!response.ok || typeof body.content !== 'string') {
+          throw new Error(body.error || 'Could not open the referenced file.');
+        }
+        setReferencePreview({
+          path: body.path || requestedReference.file,
+          root: body.root || '',
+          content: body.content,
+        });
+      })
+      .catch((error) => {
+        if (!controller.signal.aborted) {
+          setReferencePreview({
+            path: requestedReference.file,
+            root: '',
+            content: '',
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      });
+    return () => controller.abort();
+  }, [requestedReference, workingDirectories.join('|')]);
   useEffect(() => {
     const path = workingDirectory?.trim();
     if (!path) {
@@ -106,7 +185,7 @@ export function WorkspaceInspector({
     return () => controller.abort();
   }, [workingDirectory, messages.length, sending]);
   const artifacts = useMemo(() => {
-    const disk = workspaceArtifacts.map((artifact) => ({
+    const disk: Artifact[] = workspaceArtifacts.map((artifact) => ({
       id: `file-${artifact.path}`,
       title: artifact.path,
       kind: artifact.kind,
@@ -182,13 +261,41 @@ export function WorkspaceInspector({
         <button type="button" className="inspector-expand" onClick={onToggleCollapsed} aria-label="Expand workspace sidebar">‹</button>
       ) : <>
       <div className="inspector-head">
-        <div><span>Session workspace</span><strong>{selectedDiff?.path ?? selected?.title ?? 'Artifacts'}</strong></div>
+        <div><span>Session workspace</span><strong>{referenceOpen ? referencePreview?.path : selectedDiff?.path ?? selected?.title ?? 'Artifacts'}</strong></div>
         <div className="inspector-head-actions">
           <button type="button" className="inspector-collapse" onClick={onToggleCollapsed} aria-label="Collapse workspace sidebar">›</button>
           <button type="button" className="inspector-close" onClick={onClose} aria-label="Close workspace sidebar">×</button>
         </div>
       </div>
-      {selectedDiff ? (
+      {referenceOpen && referencePreview ? (
+        <>
+          <button type="button" className="artifact-back" onClick={() => setReferenceOpen(false)}>
+            Back to artifacts
+          </button>
+          <div className="reference-preview">
+            <div>
+              <strong>{requestedReference?.label || referencePreview.path}</strong>
+              <code>{referencePreview.root}</code>
+            </div>
+            {referencePreview.error ? (
+              <p className="reference-error">{referencePreview.error}</p>
+            ) : referencePreview.content ? (
+              <pre>
+                <code>
+                  {referencePreview.content.split(/\r?\n/).map((line, index) => (
+                    <span
+                      className={requestedReference?.line === index + 1 ? 'target' : ''}
+                      key={index}
+                    >
+                      <b>{index + 1}</b><i>{line || ' '}</i>
+                    </span>
+                  ))}
+                </code>
+              </pre>
+            ) : <div className="reference-loading">Loading referenced fileâ€¦</div>}
+          </div>
+        </>
+      ) : selectedDiff ? (
         <>
           <button type="button" className="artifact-back" onClick={() => setSelectedDiff(undefined)}>← Review changes</button>
           <div className="diff-view">
@@ -210,7 +317,11 @@ export function WorkspaceInspector({
       ) : selected ? (
         <>
           <button type="button" className="artifact-back" onClick={() => setSelectedId(undefined)}>← All artifacts</button>
-          <div className="artifact-preview">{renderMarkdownLite(selected.content)}</div>
+          <div className="artifact-preview">
+            {selected.diagram
+              ? <DiagramCard diagram={selected.diagram} history={selected.diagramHistory} compact />
+              : renderMarkdownLite(selected.content)}
+          </div>
         </>
       ) : (
         <>
@@ -225,7 +336,7 @@ export function WorkspaceInspector({
           <div className="inspector-content">
             {tab === 'artifacts' && artifacts.map((artifact) => (
               <button type="button" className="artifact-row" key={artifact.id} onClick={() => setSelectedId(artifact.id)}>
-                <span>{artifact.kind === 'Plan' ? '◇' : 'M↓'}</span>
+                <span>{artifact.kind === 'Plan' ? '◇' : artifact.kind === 'Diagram' ? '◈' : 'M↓'}</span>
                 <div><strong>{artifact.title}</strong><small>{artifact.kind} · Open preview</small></div>
                 <i>›</i>
               </button>

@@ -21,6 +21,16 @@ const interactiveProtocol = [
   'Use status "added", "modified", "deleted", or "renamed". Counts must reflect the changes you made.',
   'Do not emit a review block when no files changed. Do not wrap the block in Markdown.',
   '',
+  'Dynamic diagram protocol:',
+  'Use a diagram only when it makes architecture, sequence, state, relationships, hierarchy, timelines, or a multi-step process materially easier to understand than prose.',
+  'For a diagram, include a short textual explanation and then exactly one structured block:',
+  '<relay-visual>{"version":1,"id":"stable-diagram-id","revision":1,"renderer":"mermaid","diagramType":"flowchart","title":"Diagram title","description":"Accessible summary","source":"flowchart TD\\nA[Start] --> B[Done]","references":[{"nodeId":"B","label":"Implementation","file":"src/example.ts","line":10}],"generatedFrom":["src/example.ts"]}</relay-visual>',
+  'The JSON must be valid and on one line. Escape newlines inside source as \\n. Renderer must be "mermaid".',
+  'Supported Mermaid uses include flowchart, sequence, class, state, ER, Gantt, mindmap, timeline, and user journey diagrams.',
+  'Use a stable id. When updating an earlier diagram, keep its id, increment revision, and return the complete replacement source.',
+  'Include references only for real workspace files you used. Include an accessible description even when the diagram is simple.',
+  'Do not wrap the block in Markdown and do not output executable HTML or JavaScript.',
+  '',
   'For fenced code, put the language and optional file name in the fence info, for example: ```ts file=src/example.ts',
 ];
 
@@ -28,7 +38,8 @@ function cleanProtocolBlocks(content: string): string {
   return content
     .replace(/<relay-question>[\s\S]*?<\/relay-question>/g, '')
     .replace(/<relay-review>[\s\S]*?<\/relay-review>/g, '')
-    .replace(/<relay-(?:question|review)[\s\S]*$/g, '')
+    .replace(/<relay-visual>[\s\S]*?<\/relay-visual>/g, '')
+    .replace(/<relay-(?:question|review|visual)[\s\S]*$/g, '')
     .trim();
 }
 

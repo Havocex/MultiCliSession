@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import {
   fetchOptions,
   selectWorkingDirectory,
@@ -14,6 +14,12 @@ import {
   type Selection,
 } from './chatClient';
 import { ConversationFold } from './ConversationFold';
+import {
+  DiagramCard,
+  parseDiagramContent,
+  type DiagramData,
+  type DiagramReference,
+} from './DiagramCard';
 import {
   InteractiveQuestion,
   parseInteractiveContent,
@@ -91,6 +97,7 @@ export function App() {
   const [sessionTitleDraft, setSessionTitleDraft] = useState('');
   const [historyQuery, setHistoryQuery] = useState('');
   const [hubOpen, setHubOpen] = useState(false);
+  const [inspectorReference, setInspectorReference] = useState<DiagramReference>();
   const [queueCounts, setQueueCounts] = useState<Record<string, number>>({});
   const abortControllersRef = useRef(new Map<string, AbortController>());
   const promptQueuesRef = useRef(new Map<string, string[]>());
@@ -107,6 +114,21 @@ export function App() {
     (session) => session.id === activeProject.activeSessionId,
   );
   const messages = activeSession?.messages ?? [];
+  const diagramHistories = useMemo(() => {
+    const histories = new Map<string, DiagramData[]>();
+    for (const message of messages) {
+      if (message.role !== 'assistant') continue;
+      const diagram = parseDiagramContent(message.content).diagram;
+      if (!diagram) continue;
+      const current = histories.get(diagram.id) ?? [];
+      current.push(diagram);
+      histories.set(diagram.id, current);
+    }
+    for (const history of histories.values()) {
+      history.sort((left, right) => left.revision - right.revision);
+    }
+    return histories;
+  }, [messages]);
   const contextCharacters = messages
     .filter((message) => message.role === 'user' || message.role === 'assistant')
     .slice(-40)
@@ -929,6 +951,32 @@ export function App() {
     while (userIndex >= 0 && messages[userIndex]?.role !== 'user') userIndex -= 1;
     if (userIndex < 0) return;
     void sendText(messages[userIndex]!.content, messages.slice(0, userIndex));
+  };
+  const requestDiagramUpdate = (
+    instruction: string,
+    diagram: DiagramData,
+    immediate = false,
+  ) => {
+    const prompt = [
+      instruction,
+      '',
+      'Current Mermaid source:',
+      '```mermaid',
+      diagram.source,
+      '```',
+      ...(immediate ? [] : ['', 'Requested change: ']),
+    ].join('\n');
+    if (immediate) {
+      void sendText(prompt, messages);
+      return;
+    }
+    resizeComposer(prompt);
+    requestAnimationFrame(() => composerRef.current?.focus());
+  };
+  const openDiagramReference = (reference: DiagramReference) => {
+    setInspectorReference(reference);
+    setInspectorOpen(true);
+    setInspectorCollapsed(false);
   };
 
   const submitInteractiveAnswer = (
@@ -1757,10 +1805,14 @@ export function App() {
                   </div>
                 );
               }
+              const diagramParsed =
+                message.role === 'assistant'
+                  ? parseDiagramContent(message.content)
+                  : { displayContent: message.content };
               const reviewParsed =
                 message.role === 'assistant'
-                  ? parseReviewContent(message.content)
-                  : { displayContent: message.content };
+                  ? parseReviewContent(diagramParsed.displayContent)
+                  : { displayContent: diagramParsed.displayContent };
               const parsed: ReturnType<typeof parseInteractiveContent> =
                 message.role === 'assistant'
                   ? parseInteractiveContent(reviewParsed.displayContent)
@@ -1809,6 +1861,20 @@ export function App() {
                           submitInteractiveAnswer(message.id, parsed.question!, response)
                         }
                       />
+                    )}
+                    {diagramParsed.diagram && (
+                      <DiagramCard
+                        diagram={diagramParsed.diagram}
+                        history={diagramHistories.get(diagramParsed.diagram.id)}
+                        disabled={sending}
+                        onRequestUpdate={requestDiagramUpdate}
+                        onOpenReference={openDiagramReference}
+                      />
+                    )}
+                    {diagramParsed.invalidDiagram && (
+                      <div className="diagram-protocol-error" role="alert">
+                        The assistant returned an invalid diagram specification.
+                      </div>
                     )}
                     {reviewParsed.review && (
                       <ReviewChanges
@@ -1916,6 +1982,11 @@ export function App() {
         collapsed={inspectorCollapsed}
         sending={sending}
         workingDirectory={activeWorkspace}
+        workingDirectories={[
+          activeWorkspace,
+          ...(activeProject?.additionalWorkingDirectories ?? []),
+        ].filter((directory): directory is string => Boolean(directory))}
+        requestedReference={inspectorReference}
         onClose={() => setInspectorOpen(false)}
         onToggleCollapsed={() => setInspectorCollapsed((value) => !value)}
         onResize={setInspectorWidth}

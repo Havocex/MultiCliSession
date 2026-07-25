@@ -249,8 +249,9 @@ input[type="radio"]:not(:disabled),
 }
 .project-node-head {
   display: grid;
-  grid-template-columns: 22px minmax(0, 1fr) 25px;
+  grid-template-columns: 22px minmax(0, 1fr) auto 25px;
   align-items: center;
+  gap: 3px;
 }
 .tree-toggle, .project-node-select {
   min-width: 0;
@@ -278,6 +279,30 @@ input[type="radio"]:not(:disabled),
 }
 .project-node.active .project-node-select strong { color: #ece7f4; }
 .project-node-select b { color: #66606e; font-size: 8px; font-weight: 600; }
+.project-git-badge {
+  min-width: 31px;
+  height: 20px;
+  padding: 0 6px;
+  border: 1px solid rgba(121,230,170,.2);
+  border-radius: 999px;
+  color: #87d9aa;
+  background: rgba(121,230,170,.06);
+  font: 700 8px/1 'Manrope', sans-serif;
+  letter-spacing: .02em;
+}
+.project-git-badge:hover:not(:disabled) {
+  border-color: rgba(121,230,170,.44);
+  color: #bdffd7;
+  background: rgba(121,230,170,.13);
+}
+.project-git-badge.ready {
+  border-color: rgba(121,230,170,.14);
+  color: #719a82;
+  background: rgba(121,230,170,.035);
+}
+.project-git-badge.checking { color: #6b6670; border-color: rgba(255,255,255,.07); }
+.project-git-badge.error { color: #f0a3aa; border-color: rgba(255,125,138,.2); }
+.project-git-badge:disabled { cursor: default; opacity: .72; }
 .project-folder { color: var(--accent); font-size: 10px; }
 .project-inline-name {
   width: 100%;
@@ -2189,6 +2214,29 @@ body.resizing-inspector, body.resizing-inspector * {
   cursor: pointer;
 }
 .modal-actions button.danger { border-color: rgba(255,125,138,.2); color: #ffd6da; background: rgba(255,125,138,.16); }
+.git-init-modal { border-color: rgba(121,230,170,.16); }
+.git-modal-icon {
+  color: #9ff0be;
+  border: 1px solid rgba(121,230,170,.2);
+  background: rgba(121,230,170,.08);
+  font-size: 10px;
+}
+.git-modal-path {
+  display: block;
+  max-width: 420px;
+  margin-top: 9px;
+  overflow: hidden;
+  color: #918a99;
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.git-modal-error { display: block; margin-top: 7px; color: #ef929c; }
+.modal-actions button.git-init-confirm {
+  border-color: rgba(121,230,170,.24);
+  color: #d9ffe8;
+  background: rgba(121,230,170,.14);
+}
 
 @media (max-width: 1100px) {
   .app-shell, .app-shell.inspector-collapsed { grid-template-columns: 318px minmax(0, 1fr); }

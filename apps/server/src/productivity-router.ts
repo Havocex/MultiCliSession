@@ -68,9 +68,49 @@ productivityRouter.get('/git-status', async (req, res) => {
         branch: lines.find((line) => line.startsWith('branch '))?.replace('branch refs/heads/', '') ?? '',
       };
     });
-    res.json({ branch: branchResult.stdout.trim() || '(detached)', changes, worktrees });
+    res.json({ branch: branchResult.stdout.trim() || '(detached)', changes, worktrees, available: true });
   } catch {
     res.json({ branch: '', changes: [], worktrees: [], available: false });
+  }
+});
+
+productivityRouter.post('/git-init', async (req, res) => {
+  const root = safeRoot(req.body?.path);
+  if (!root) {
+    res.status(400).json({ error: 'A workspace path is required.' });
+    return;
+  }
+  try {
+    if (!(await stat(root)).isDirectory()) {
+      res.status(400).json({ error: 'The workspace path is not a directory.' });
+      return;
+    }
+    try {
+      const repositoryRoot = (await execFileAsync(
+        'git',
+        ['-C', root, 'rev-parse', '--show-toplevel'],
+        { windowsHide: true },
+      )).stdout.trim();
+      res.json({ ok: true, initialized: false, repositoryRoot });
+      return;
+    } catch {
+      // The selected folder is not in a repository yet.
+    }
+    await execFileAsync('git', ['-C', root, 'init'], {
+      windowsHide: true,
+      maxBuffer: 1024 * 1024,
+    });
+    const repositoryRoot = (await execFileAsync(
+      'git',
+      ['-C', root, 'rev-parse', '--show-toplevel'],
+      { windowsHide: true },
+    )).stdout.trim();
+    res.json({ ok: true, initialized: true, repositoryRoot });
+  } catch (error) {
+    res.status(400).json({
+      error: (error as { stderr?: string }).stderr?.trim() ||
+        (error instanceof Error ? error.message : 'Could not initialize Git.'),
+    });
   }
 });
 

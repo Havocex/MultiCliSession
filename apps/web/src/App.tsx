@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { apiFetch } from './apiClient';
 import {
   fetchOptions,
   redoWorkspaceFiles,
@@ -98,6 +99,10 @@ export function App() {
   const [deleteTarget, setDeleteTarget] = useState<
     { kind: 'project' | 'session'; id: string; name: string; projectId?: string } | undefined
   >();
+  const [gitStates, setGitStates] = useState<Record<string, 'checking' | 'ready' | 'missing' | 'error'>>({});
+  const [gitPrompt, setGitPrompt] = useState<{ path: string; projectName: string }>();
+  const [gitInitializing, setGitInitializing] = useState(false);
+  const [gitError, setGitError] = useState('');
   const [expandedProjects, setExpandedProjects] = useState<Record<string, boolean>>({});
   const [editingSessionId, setEditingSessionId] = useState<string>();
   const [sessionTitleDraft, setSessionTitleDraft] = useState('');
@@ -424,6 +429,70 @@ export function App() {
     }
   };
 
+  const inspectGitWorkspace = async (
+    path: string,
+    projectName: string,
+    offerInitialization: boolean,
+  ) => {
+    setGitStates((current) => ({ ...current, [path]: 'checking' }));
+    try {
+      const response = await apiFetch(
+        `/api/productivity/git-status?path=${encodeURIComponent(path)}`,
+      );
+      if (!response.ok) throw new Error(await response.text());
+      const result = await response.json() as { available?: boolean };
+      const state = result.available === false ? 'missing' : 'ready';
+      setGitStates((current) => ({ ...current, [path]: state }));
+      if (state === 'missing' && offerInitialization) {
+        setGitError('');
+        setGitPrompt({ path, projectName });
+      }
+      return state;
+    } catch {
+      setGitStates((current) => ({ ...current, [path]: 'error' }));
+      if (offerInitialization) {
+        setGitError('Could not check Git availability for this folder.');
+        setGitPrompt({ path, projectName });
+      }
+      return 'error';
+    }
+  };
+
+  const initializeGitWorkspace = async () => {
+    if (!gitPrompt || gitInitializing) return;
+    setGitInitializing(true);
+    setGitError('');
+    try {
+      const response = await apiFetch('/api/productivity/git-init', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: gitPrompt.path }),
+      });
+      const result = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(result.error || 'Could not initialize Git.');
+      setGitStates((current) => ({ ...current, [gitPrompt.path]: 'ready' }));
+      setGitPrompt(undefined);
+    } catch (error) {
+      setGitError(error instanceof Error ? error.message : 'Could not initialize Git.');
+      setGitStates((current) => ({ ...current, [gitPrompt.path]: 'error' }));
+    } finally {
+      setGitInitializing(false);
+    }
+  };
+
+  useEffect(() => {
+    for (const project of library?.projects ?? []) {
+      const path = project.workingDirectory?.trim();
+      if (path && !gitStates[path]) {
+        void inspectGitWorkspace(path, project.name, false);
+      }
+    }
+  }, [
+    library?.projects
+      .map((project) => `${project.id}:${project.workingDirectory ?? ''}`)
+      .join('|'),
+  ]);
+
   const createProject = () => {
     const incompleteProject = library?.projects.find(
       (project) => !project.workingDirectory?.trim(),
@@ -455,6 +524,7 @@ export function App() {
       if (!selectedPath) return;
       updateProjectWorkingDirectory(selectedPath);
       setStatusError('');
+      await inspectGitWorkspace(selectedPath, activeProject.name, true);
     } catch (error) {
       setStatusError(error instanceof Error ? error.message : 'Could not open the folder picker.');
     }
@@ -486,6 +556,7 @@ export function App() {
         }),
       } : currentLibrary);
       setStatusError('');
+      await inspectGitWorkspace(selectedPath, activeProject.name, true);
     } catch (error) {
       setStatusError(error instanceof Error ? error.message : 'Could not add the folder.');
     }
@@ -1350,6 +1421,41 @@ export function App() {
                       <strong>{project.name}</strong>
                       <b>{project.sessions.length}</b>
                     </button>
+                    <button
+                      type="button"
+                      className={`project-git-badge ${
+                        project.workingDirectory
+                          ? gitStates[project.workingDirectory] ?? 'checking'
+                          : 'missing'
+                      }`}
+                      disabled={
+                        !project.workingDirectory?.trim() ||
+                        gitStates[project.workingDirectory] === 'checking' ||
+                        gitStates[project.workingDirectory] === 'ready'
+                      }
+                      aria-label={
+                        gitStates[project.workingDirectory ?? ''] === 'ready'
+                          ? `Git is active for ${project.name}`
+                          : `Initialize Git for ${project.name}`
+                      }
+                      title={
+                        gitStates[project.workingDirectory ?? ''] === 'ready'
+                          ? 'Git repository active'
+                          : 'Initialize Git repository'
+                      }
+                      onClick={() => {
+                        const path = project.workingDirectory?.trim();
+                        if (!path) return;
+                        if (gitStates[path] === 'missing') {
+                          setGitError('');
+                          setGitPrompt({ path, projectName: project.name });
+                          return;
+                        }
+                        void inspectGitWorkspace(path, project.name, true);
+                      }}
+                    >
+                      Git{gitStates[project.workingDirectory ?? ''] === 'ready' ? ' ✓' : ''}
+                    </button>
                     {projectActive && (
                       <button
                         type="button"
@@ -2151,6 +2257,48 @@ export function App() {
             <div className="modal-actions">
               <button type="button" onClick={() => setDeleteTarget(undefined)}>Cancel</button>
               <button type="button" className="danger" onClick={confirmDelete}>Delete</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {gitPrompt && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={() => {
+          if (!gitInitializing) setGitPrompt(undefined);
+        }}>
+          <div
+            className="confirm-modal git-init-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="git-init-title"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div className="modal-icon git-modal-icon">Git</div>
+            <div>
+              <span className="modal-kicker">Version control</span>
+              <h2 id="git-init-title">Initialize Git for this project?</h2>
+              <p>
+                “{gitPrompt.projectName}” is not currently inside a Git repository.
+                Initializing Git enables accurate green/red diffs and project history.
+              </p>
+              <code className="git-modal-path">{gitPrompt.path}</code>
+              {gitError && <small className="git-modal-error">{gitError}</small>}
+            </div>
+            <div className="modal-actions">
+              <button
+                type="button"
+                disabled={gitInitializing}
+                onClick={() => setGitPrompt(undefined)}
+              >
+                Not now
+              </button>
+              <button
+                type="button"
+                className="git-init-confirm"
+                disabled={gitInitializing}
+                onClick={() => void initializeGitWorkspace()}
+              >
+                {gitInitializing ? 'Initializing…' : 'Initialize Git'}
+              </button>
             </div>
           </div>
         </div>

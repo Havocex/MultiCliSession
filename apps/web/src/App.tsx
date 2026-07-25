@@ -81,6 +81,14 @@ const compactSessionPreview = (content: string) =>
     .replace(/\s+/g, ' ')
     .trim();
 
+const compactWorkspacePath = (value?: string) => {
+  if (!value) return 'No folder selected';
+  const separator = value.includes('\\') ? '\\' : '/';
+  const parts = value.split(/[\\/]+/).filter(Boolean);
+  if (parts.length <= 3) return value;
+  return `…${separator}${parts.slice(-2).join(separator)}`;
+};
+
 export function App() {
   const [draft, setDraft] = useState('');
   const [options, setOptions] = useState<Options>();
@@ -2108,6 +2116,42 @@ export function App() {
         </section>
 
         <footer className="composer-wrap">
+          <div className="session-context-toasts" aria-label="Active session context">
+            <div className="session-context-toast project" title={activeProject?.name ?? 'No active project'}>
+              <span>◇</span>
+              <small>Project</small>
+              <strong>{activeProject?.name ?? 'No project'}</strong>
+            </div>
+            <div
+              className="session-context-toast folder"
+              title={activeWorkspace ?? 'No working directory selected'}
+            >
+              <span>⌂</span>
+              <small>Folder</small>
+              <strong>{compactWorkspacePath(activeWorkspace)}</strong>
+            </div>
+            <div
+              className="session-context-toast model"
+              title={`${activeProvider?.label ?? 'Provider'} · ${activeModel?.label ?? selection?.modelId ?? 'No model'}`}
+            >
+              <span>✦</span>
+              <small>Model</small>
+              <strong>{activeModel?.label ?? selection?.modelId ?? 'Not selected'}</strong>
+            </div>
+            <div className="session-context-toast reasoning">
+              <span>◌</span>
+              <small>Reasoning</small>
+              <strong>{selection?.effort ?? 'Preset'}</strong>
+            </div>
+            <div
+              className={`session-context-toast permission ${activePermission?.risk ?? 'safe'}`}
+              title={activePermission?.description}
+            >
+              <span>{activePermission?.risk === 'danger' ? '!' : '◇'}</span>
+              <small>Access</small>
+              <strong>{activePermission?.label ?? 'Default'}</strong>
+            </div>
+          </div>
           <div className={`composer ${draft.trim() ? 'has-content' : ''}`}>
             <textarea
               ref={composerRef}

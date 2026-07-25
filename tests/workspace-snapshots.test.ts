@@ -14,6 +14,7 @@ test('redo snapshot reapplies modified and newly added workspace files after und
     const {
       createWorkspaceRedoSnapshot,
       createWorkspaceSnapshot,
+      getWorkspaceSnapshotFile,
       restoreWorkspaceFiles,
     } = await import('../apps/server/src/workspace-snapshots.js');
 
@@ -21,6 +22,11 @@ test('redo snapshot reapplies modified and newly added workspace files after und
     await writeFile(path.join(workspace, 'existing.txt'), 'before', 'utf8');
     const undoSnapshotId = await createWorkspaceSnapshot(workspace);
     assert.ok(undoSnapshotId);
+    const captured = await getWorkspaceSnapshotFile(undoSnapshotId, 'existing.txt');
+    const absent = await getWorkspaceSnapshotFile(undoSnapshotId, 'added.txt');
+    assert.equal(captured.state, 'captured');
+    assert.equal(captured.content, 'before');
+    assert.equal(absent.state, 'absent');
 
     await writeFile(path.join(workspace, 'existing.txt'), 'after', 'utf8');
     await writeFile(path.join(workspace, 'added.txt'), 'new file', 'utf8');

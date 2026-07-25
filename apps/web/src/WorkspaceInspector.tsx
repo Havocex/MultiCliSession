@@ -30,6 +30,7 @@ interface WorkspaceArtifact {
 export interface RequestedReviewFile {
   requestId: string;
   file: ReviewFile;
+  snapshotId?: string;
 }
 
 function artifactTitle(info: string, fallback: string): string {
@@ -123,7 +124,7 @@ export function WorkspaceInspector({
 }) {
   const [tab, setTab] = useState<'artifacts' | 'changes'>('artifacts');
   const [selectedId, setSelectedId] = useState<string>();
-  const [selectedDiff, setSelectedDiff] = useState<ReviewFile>();
+  const [selectedDiff, setSelectedDiff] = useState<Omit<RequestedReviewFile, 'requestId'>>();
   const [diffLines, setDiffLines] = useState<Array<{ type: 'add' | 'remove' | 'context'; content: string }>>([]);
   const [workspaceArtifacts, setWorkspaceArtifacts] = useState<WorkspaceArtifact[]>([]);
   const [referenceOpen, setReferenceOpen] = useState(false);
@@ -138,7 +139,10 @@ export function WorkspaceInspector({
     setTab('changes');
     setReferenceOpen(false);
     setSelectedId(undefined);
-    setSelectedDiff(requestedReviewFile.file);
+    setSelectedDiff({
+      file: requestedReviewFile.file,
+      snapshotId: requestedReviewFile.snapshotId,
+    });
   }, [requestedReviewFile]);
   useEffect(() => {
     if (!requestedReference) return;
@@ -230,9 +234,10 @@ export function WorkspaceInspector({
     const controller = new AbortController();
     const query = new URLSearchParams({
       path: workingDirectory,
-      file: selectedDiff.path,
-      status: selectedDiff.status,
+      file: selectedDiff.file.path,
+      status: selectedDiff.file.status,
     });
+    if (selectedDiff.snapshotId) query.set('snapshotId', selectedDiff.snapshotId);
     void apiFetch(`/api/chat/workspace-diff?${query}`, { signal: controller.signal })
       .then((response) => response.ok ? response.json() : Promise.reject())
       .then((data: { lines?: Array<{ type: 'add' | 'remove' | 'context'; content: string }> }) =>
@@ -277,7 +282,7 @@ export function WorkspaceInspector({
         <button type="button" className="inspector-expand" onClick={onToggleCollapsed} aria-label="Expand workspace sidebar">‹</button>
       ) : <>
       <div className="inspector-head">
-        <div><span>Session workspace</span><strong>{referenceOpen ? referencePreview?.path : selectedDiff?.path ?? selected?.title ?? 'Artifacts'}</strong></div>
+        <div><span>Session workspace</span><strong>{referenceOpen ? referencePreview?.path : selectedDiff?.file.path ?? selected?.title ?? 'Artifacts'}</strong></div>
         <div className="inspector-head-actions">
           <button type="button" className="inspector-collapse" onClick={onToggleCollapsed} aria-label="Collapse workspace sidebar">›</button>
           <button type="button" className="inspector-close" onClick={onClose} aria-label="Close workspace sidebar">×</button>
@@ -316,9 +321,9 @@ export function WorkspaceInspector({
           <button type="button" className="artifact-back" onClick={() => setSelectedDiff(undefined)}>← Review changes</button>
           <div className="diff-view">
             <div className="diff-summary">
-              <span className={`file-status ${selectedDiff.status}`}>{selectedDiff.status.slice(0, 1).toUpperCase()}</span>
-              <code>{selectedDiff.path}</code>
-              <b>+{selectedDiff.additions}</b><i>−{selectedDiff.deletions}</i>
+              <span className={`file-status ${selectedDiff.file.status}`}>{selectedDiff.file.status.slice(0, 1).toUpperCase()}</span>
+              <code>{selectedDiff.file.path}</code>
+              <b>+{selectedDiff.file.additions}</b><i>−{selectedDiff.file.deletions}</i>
             </div>
             <div className="diff-code">
               {diffLines.map((line, index) => (
@@ -365,7 +370,10 @@ export function WorkspaceInspector({
                 disabled={sending}
                 onUndo={() => onUndo(message.id, review)}
                 onRedo={() => onRedo(message.id, review)}
-                onFileSelect={setSelectedDiff}
+                onFileSelect={(file) => setSelectedDiff({
+                  file,
+                  snapshotId: message.reviewAction?.snapshotId,
+                })}
               />
             ))}
             {tab === 'artifacts' && !artifacts.length && (

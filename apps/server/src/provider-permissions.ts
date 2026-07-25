@@ -53,7 +53,7 @@ const permissions: Record<AgentProvider, ProviderPermissionRuntime[]> = {
     {
       id: 'codex-write',
       label: 'Workspace access',
-      description: 'Can read, run commands, and edit files inside the configured workspace.',
+      description: 'Can read, run commands, and edit files inside the configured workspace using the native Windows sandbox.',
       risk: 'caution',
       workspaceAccess: true,
       codex: { sandbox: 'workspace-write', approval: 'never' },

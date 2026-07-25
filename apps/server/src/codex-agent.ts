@@ -8,6 +8,8 @@ import { configuredWorkspace, getProviderPermission } from './provider-permissio
 import { stopProcessTree } from './process-control.js';
 import type { AgentEvent, AgentRunOptions } from './types.js';
 
+let windowsWorkspaceSandboxReady = false;
+
 function cleanError(value: unknown): string {
   const raw = typeof value === 'string' ? value : JSON.stringify(value);
   try {
@@ -16,6 +18,65 @@ function cleanError(value: unknown): string {
   } catch {
     return raw;
   }
+}
+
+async function ensureWindowsWorkspaceSandbox(
+  launch: Awaited<ReturnType<typeof resolveCodexCli>>,
+  workspace: string,
+): Promise<void> {
+  if (process.platform !== 'win32' || windowsWorkspaceSandboxReady || !launch) return;
+
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn(launch.command, [
+      ...launch.prefixArgs,
+      'sandbox',
+      '-c', "windows.sandbox='unelevated'",
+      '-C', workspace,
+      '-P', ':workspace',
+      'powershell.exe',
+      '-NoProfile',
+      '-Command',
+      'Write-Output sandbox-ready',
+    ], {
+      cwd: workspace,
+      env: subscriptionEnv(),
+      stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true,
+    });
+    let stdout = '';
+    let stderr = '';
+    let settled = false;
+    const finish = (error?: Error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (error) reject(error);
+      else resolve();
+    };
+    const timer = setTimeout(() => {
+      stopProcessTree(child);
+      finish(new Error(
+        'Codex could not initialize its Windows workspace sandbox. '
+        + 'Restart Codex and retry. If the problem continues, open `codex` in a terminal and run '
+        + '`/setup-default-sandbox`. Full computer access remains available only as an explicit alternative.',
+      ));
+    }, 15_000);
+    child.stdout?.on('data', (chunk: Buffer) => (stdout += chunk.toString('utf8')));
+    child.stderr?.on('data', (chunk: Buffer) => (stderr += chunk.toString('utf8')));
+    child.on('error', (error) => finish(error));
+    child.on('close', (code) => {
+      if (code === 0 && /sandbox-ready/i.test(stdout)) {
+        windowsWorkspaceSandboxReady = true;
+        finish();
+        return;
+      }
+      finish(new Error(
+        stderr.trim()
+        || 'The Windows workspace sandbox is not ready. Restart Codex and retry. '
+          + 'If needed, open `codex` and run `/setup-default-sandbox`.',
+      ));
+    });
+  });
 }
 
 export async function runCodex(
@@ -34,11 +95,17 @@ export async function runCodex(
   const stop = () => stopProcessTree(child);
 
   try {
+    if (permission.codex?.sandbox === 'workspace-write') {
+      await ensureWindowsWorkspaceSandbox(launch, workspace);
+    }
     const args = [
       ...launch.prefixArgs,
       '-a', permission.codex!.approval,
       '-s', permission.codex!.sandbox,
       '-C', workspace,
+      ...(process.platform === 'win32' && permission.codex?.sandbox === 'workspace-write'
+        ? ['-c', "windows.sandbox='unelevated'"]
+        : []),
       ...(permission.workspaceAccess
         ? [
             ...(options.additionalWorkingDirectories ?? []),
@@ -61,13 +128,21 @@ export async function runCodex(
       args.push('-c', `model_reasoning_effort='${options.selection.effort}'`);
     }
     if (options.selection.fast) args.push('-c', "service_tier='fast'");
+    const prompt = buildChatPrompt(options)
+      + (process.platform === 'win32' && permission.codex?.sandbox === 'workspace-write'
+        ? '\n\nWindows workspace execution note: the native unelevated sandbox can reject the '
+          + '`apply_patch` tool even for allowed workspace paths. For file edits, create, update, '
+          + 'move, and delete files with narrowly scoped PowerShell or filesystem commands inside '
+          + 'the configured workspace instead of `apply_patch`. Validate exact paths first and do '
+          + 'not change ACLs or permissions.'
+        : '');
     args.push(
       'exec',
       ...(options.attachments ?? [])
         .filter((attachment) => attachment.kind === 'image' && attachment.path)
         .flatMap((attachment) => ['--image', attachment.path!]),
       '--json', '--ephemeral', '--ignore-user-config', '--ignore-rules',
-      '--skip-git-repo-check', '--color', 'never', buildChatPrompt(options),
+      '--skip-git-repo-check', '--color', 'never', prompt,
     );
 
     await new Promise<void>((resolve, reject) => {

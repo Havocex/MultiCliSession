@@ -78,6 +78,34 @@ async function readManifest(snapshotId: string): Promise<SnapshotManifest> {
   ) as SnapshotManifest;
 }
 
+export async function getWorkspaceSnapshotFile(
+  snapshotId: string,
+  requestedFile: string,
+): Promise<{
+  workspace: string;
+  state: 'captured' | 'absent' | 'unavailable';
+  path?: string;
+  content?: string;
+}> {
+  const manifest = await readManifest(snapshotId);
+  const relative = safeRelativePath(requestedFile);
+  if (!relative) throw new Error('Invalid snapshot file path.');
+  const status = manifest.files[relative];
+  if (status === 'captured') {
+    const snapshotPath = path.join(snapshotsRoot, snapshotId, 'files', relative);
+    return {
+      workspace: manifest.workspace,
+      state: 'captured',
+      path: snapshotPath,
+      content: await readFile(snapshotPath, 'utf8'),
+    };
+  }
+  return {
+    workspace: manifest.workspace,
+    state: status === 'too-large' || !manifest.complete ? 'unavailable' : 'absent',
+  };
+}
+
 export async function createWorkspaceSnapshot(workspace: string): Promise<string | undefined> {
   await pruneWorkspaceSnapshots().catch(() => 0);
   const root = path.resolve(workspace);

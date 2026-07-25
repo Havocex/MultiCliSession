@@ -14,6 +14,7 @@ import { getProviderStatus } from './provider-sessions.js';
 import {
   createWorkspaceRedoSnapshot,
   createWorkspaceSnapshot,
+  getWorkspaceSnapshotFile,
   restoreWorkspaceFiles,
 } from './workspace-snapshots.js';
 import type { AgentEvent, AgentProvider, AgentSelection, ChatMessage } from './types.js';
@@ -43,6 +44,7 @@ function boundedHistory(history: ChatMessage[]): ChatMessage[] {
 chatRouter.get('/workspace-diff', async (req, res) => {
   const requestedRoot = typeof req.query.path === 'string' ? req.query.path.trim() : '';
   const requestedFile = typeof req.query.file === 'string' ? req.query.file.trim() : '';
+  const snapshotId = typeof req.query.snapshotId === 'string' ? req.query.snapshotId.trim() : '';
   const status = typeof req.query.status === 'string' ? req.query.status : 'modified';
   if (!requestedRoot || !requestedFile) {
     res.status(400).json({ error: 'A workspace path and file are required.' });
@@ -55,13 +57,47 @@ chatRouter.get('/workspace-diff', async (req, res) => {
     return;
   }
   let patch = '';
-  try {
-    const result = await execFileAsync('git', [
-      '-C', root, 'diff', '--no-ext-diff', '--unified=4', '--', requestedFile,
-    ], { windowsHide: true, maxBuffer: 2 * 1024 * 1024 });
-    patch = result.stdout;
-  } catch (error) {
-    patch = (error as { stdout?: string }).stdout ?? '';
+  if (snapshotId) {
+    try {
+      const snapshot = await getWorkspaceSnapshotFile(snapshotId, requestedFile);
+      if (resolve(snapshot.workspace) !== root) {
+        res.status(400).json({ error: 'The snapshot does not belong to this workspace.' });
+        return;
+      }
+      if (snapshot.state === 'captured') {
+        try {
+          const result = await execFileAsync('git', [
+            'diff', '--no-index', '--no-ext-diff', '--unified=4', '--',
+            snapshot.path!, absolute,
+          ], { windowsHide: true, maxBuffer: 2 * 1024 * 1024 });
+          patch = result.stdout;
+        } catch (error) {
+          patch = (error as { stdout?: string }).stdout ?? '';
+          if (!patch) {
+            patch = (snapshot.content ?? '').split('\n').map((line) => `-${line}`).join('\n');
+          }
+        }
+      } else if (snapshot.state === 'absent' && status !== 'deleted') {
+        try {
+          const content = await readFile(absolute, 'utf8');
+          patch = content.split('\n').map((line) => `+${line}`).join('\n');
+        } catch {
+          patch = '';
+        }
+      }
+    } catch {
+      // A pruned or incomplete snapshot falls back to the Git working-tree diff.
+    }
+  }
+  if (!patch) {
+    try {
+      const result = await execFileAsync('git', [
+        '-C', root, 'diff', '--no-ext-diff', '--unified=4', '--', requestedFile,
+      ], { windowsHide: true, maxBuffer: 2 * 1024 * 1024 });
+      patch = result.stdout;
+    } catch (error) {
+      patch = (error as { stdout?: string }).stdout ?? '';
+    }
   }
   if (!patch && status !== 'deleted') {
     try {

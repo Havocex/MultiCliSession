@@ -1179,11 +1179,15 @@ export function App() {
     setInspectorCollapsed(false);
   };
 
-  const openReviewFile = (file: RequestedReviewFile['file']) => {
+  const openReviewFile = (
+    file: RequestedReviewFile['file'],
+    snapshotId?: string,
+  ) => {
     setInspectorReference(undefined);
     setInspectorReviewFile({
       requestId: id(),
       file,
+      snapshotId,
     });
     setInspectorOpen(true);
     setInspectorCollapsed(false);
@@ -2230,7 +2234,9 @@ export function App() {
                         disabled={sending}
                         onUndo={() => requestUndoChanges(message.id, reviewParsed.review!)}
                         onRedo={() => requestRedoChanges(message.id, reviewParsed.review!)}
-                        onFileSelect={openReviewFile}
+                        onFileSelect={(file) =>
+                          openReviewFile(file, message.reviewAction?.snapshotId)
+                        }
                       />
                     )}
                     {message.error && (
